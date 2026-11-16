@@ -10,6 +10,84 @@ import (
 	"database/sql"
 )
 
+const QuotaGetActiveLimits = `-- name: QuotaGetActiveLimits :many
+SELECT project_id, resource, hard_limit
+FROM quotas WHERE deleted = 0
+`
+
+type QuotaGetActiveLimitsRow struct {
+	ProjectID sql.NullString
+	Resource  string
+	HardLimit sql.NullInt32
+}
+
+// Aggregate and type-specific resources share this table. Do not join usage:
+// projects using defaults may have accounting without any override.
+func (q *Queries) QuotaGetActiveLimits(ctx context.Context) ([]QuotaGetActiveLimitsRow, error) {
+	rows, err := q.db.QueryContext(ctx, QuotaGetActiveLimits)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []QuotaGetActiveLimitsRow
+	for rows.Next() {
+		var i QuotaGetActiveLimitsRow
+		if err := rows.Scan(&i.ProjectID, &i.Resource, &i.HardLimit); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const QuotaGetActiveUsage = `-- name: QuotaGetActiveUsage :many
+SELECT project_id, resource, in_use, reserved
+FROM quota_usages WHERE deleted = 0
+`
+
+type QuotaGetActiveUsageRow struct {
+	ProjectID sql.NullString
+	Resource  sql.NullString
+	InUse     int32
+	Reserved  int32
+}
+
+// Accounting is already per project/resource. Never add typed resources to
+// aggregate resources, or sum duplicate active rows as if they were users.
+func (q *Queries) QuotaGetActiveUsage(ctx context.Context) ([]QuotaGetActiveUsageRow, error) {
+	rows, err := q.db.QueryContext(ctx, QuotaGetActiveUsage)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []QuotaGetActiveUsageRow
+	for rows.Next() {
+		var i QuotaGetActiveUsageRow
+		if err := rows.Scan(
+			&i.ProjectID,
+			&i.Resource,
+			&i.InUse,
+			&i.Reserved,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const QuotaGetAllWithUsage = `-- name: QuotaGetAllWithUsage :many
 SELECT
     q.project_id,
@@ -47,6 +125,39 @@ func (q *Queries) QuotaGetAllWithUsage(ctx context.Context) ([]QuotaGetAllWithUs
 			&i.HardLimit,
 			&i.InUse,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const QuotaGetDefaultClassLimits = `-- name: QuotaGetDefaultClassLimits :many
+SELECT resource, hard_limit
+FROM quota_classes WHERE deleted = 0 AND class_name = 'default'
+`
+
+type QuotaGetDefaultClassLimitsRow struct {
+	Resource  sql.NullString
+	HardLimit sql.NullInt32
+}
+
+func (q *Queries) QuotaGetDefaultClassLimits(ctx context.Context) ([]QuotaGetDefaultClassLimitsRow, error) {
+	rows, err := q.db.QueryContext(ctx, QuotaGetDefaultClassLimits)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []QuotaGetDefaultClassLimitsRow
+	for rows.Next() {
+		var i QuotaGetDefaultClassLimitsRow
+		if err := rows.Scan(&i.Resource, &i.HardLimit); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

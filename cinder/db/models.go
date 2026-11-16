@@ -20,6 +20,17 @@ type Quota struct {
 	Allocated sql.NullInt32
 }
 
+type QuotaClass struct {
+	ID        int32
+	CreatedAt sql.NullTime
+	UpdatedAt sql.NullTime
+	DeletedAt sql.NullTime
+	Deleted   sql.NullBool
+	ClassName sql.NullString
+	Resource  sql.NullString
+	HardLimit sql.NullInt32
+}
+
 type QuotaUsage struct {
 	CreatedAt     sql.NullTime
 	UpdatedAt     sql.NullTime

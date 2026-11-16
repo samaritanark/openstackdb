@@ -124,6 +124,34 @@ implemented. Query compatibility depends on the deployed service schema.
 They are test inputs, not production migrations or a claim of support for every
 OpenStack release. Some inherited queries require indexes present in the fixtures.
 
+## Cinder quota accounting
+
+`cinder/db.NewQuotaRepository` provides context-aware bulk reads of active project
+limits, usage including reserved amounts, default-class limits, and volume types.
+Pass an existing database connection or transaction and supply a caller deadline.
+The existing filtered and override-led quota APIs keep their behavior.
+
+`GetProjectLimits` and `GetProjectUsage` read independently, so usage includes
+projects without explicit overrides. They return all resource keys, including
+complete name-suffixed volume-type keys such as `gigabytes_fast_ssd`. Type-specific
+and aggregate accounting overlap and must not be added together. Active reads use
+`deleted = 0`; `GetDefaultLimits` selects only the `default` quota class, and
+`GetVolumeTypes` delegates to the existing current-volume-type query.
+
+These are raw persisted rows: duplicate records, nullable identities and limits,
+zero limits, and unlimited values (-1) remain visible. Usage and reserved amounts
+retain the existing signed int32 projection. Callers own validation and effective
+limit resolution, including configured defaults and custom request-context classes.
+No duplicate aggregation or automatic fallback is performed. The added
+`quota_classes` schema is a test/code-generation fixture, not a production migration.
+Compatibility depends on the deployed Cinder schema.
+
+Run `python3 -B tests/cinder_quota_sql_test.py -v` for portable SQLite SQL checks,
+or `go test -race -tags integration ./cinder/db` for the MariaDB repository test
+(requires Docker). The standard-library Python suite checks source/generated SQL
+agreement and fixture semantics; it supplements the native database tests. CI runs
+it with `python3 -m unittest discover -s tests -p '*sql_test.py' -v` (Python 3.9+).
+
 ## Development
 
 Requires Go 1.25.5 or later. SQL sources live alongside their generated Go packages.

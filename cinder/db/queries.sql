@@ -93,3 +93,19 @@ WHERE
 -- name: VolumeGetAll :many
 SELECT id, project_id, size, volume_type_id, status, created_at, deleted_at
 FROM volumes WHERE deleted = 0;
+
+-- name: QuotaGetActiveLimits :many
+-- Aggregate and type-specific resources share this table. Do not join usage:
+-- projects using defaults may have accounting without any override.
+SELECT project_id, resource, hard_limit
+FROM quotas WHERE deleted = 0;
+
+-- name: QuotaGetActiveUsage :many
+-- Accounting is already per project/resource. Never add typed resources to
+-- aggregate resources, or sum duplicate active rows as if they were users.
+SELECT project_id, resource, in_use, reserved
+FROM quota_usages WHERE deleted = 0;
+
+-- name: QuotaGetDefaultClassLimits :many
+SELECT resource, hard_limit
+FROM quota_classes WHERE deleted = 0 AND class_name = 'default';
