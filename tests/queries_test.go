@@ -146,6 +146,22 @@ func TestManilaQueries(t *testing.T) {
 	var err error
 	_, err = q.ShareGetAllWithInstances(ctx)
 	require.NoError(t, err, "ShareGetAllWithInstances")
+	_, err = q.ShareGetInventory(ctx)
+	require.NoError(t, err, "ShareGetInventory")
+	_, err = q.QuotaGetProjectLimits(ctx)
+	require.NoError(t, err, "QuotaGetProjectLimits")
+	_, err = q.QuotaUsageGetAll(ctx)
+	require.NoError(t, err, "QuotaUsageGetAll")
+	_, err = q.QuotaGetDefaultLimits(ctx)
+	require.NoError(t, err, "QuotaGetDefaultLimits")
+	_, err = q.QuotaGetUserLimits(ctx)
+	require.NoError(t, err, "QuotaGetUserLimits")
+	_, err = q.QuotaGetShareTypeLimits(ctx)
+	require.NoError(t, err, "QuotaGetShareTypeLimits")
+	_, err = q.QuotaUsageGetProjectTotals(ctx)
+	require.NoError(t, err, "QuotaUsageGetProjectTotals")
+	_, err = q.QuotaUsageGetShareTypeTotals(ctx)
+	require.NoError(t, err, "QuotaUsageGetShareTypeTotals")
 }
 func TestNeutronQueries(t *testing.T) {
 	ctx := context.Background()

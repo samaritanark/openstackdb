@@ -10,6 +10,315 @@ import (
 	"database/sql"
 )
 
+const QuotaGetDefaultLimits = `-- name: QuotaGetDefaultLimits :many
+SELECT resource, hard_limit
+FROM quota_classes
+WHERE deleted = 0 AND class_name = 'default'
+`
+
+type QuotaGetDefaultLimitsRow struct {
+	Resource  sql.NullString
+	HardLimit sql.NullInt32
+}
+
+// The persisted 'default' class overrides service configuration defaults.
+func (q *Queries) QuotaGetDefaultLimits(ctx context.Context) ([]QuotaGetDefaultLimitsRow, error) {
+	rows, err := q.db.QueryContext(ctx, QuotaGetDefaultLimits)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []QuotaGetDefaultLimitsRow
+	for rows.Next() {
+		var i QuotaGetDefaultLimitsRow
+		if err := rows.Scan(&i.Resource, &i.HardLimit); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const QuotaGetProjectLimits = `-- name: QuotaGetProjectLimits :many
+SELECT
+    project_id,
+    resource,
+    hard_limit
+FROM
+    quotas
+WHERE
+    deleted = 0 AND project_id <> ''
+`
+
+type QuotaGetProjectLimitsRow struct {
+	ProjectID sql.NullString
+	Resource  sql.NullString
+	HardLimit sql.NullInt32
+}
+
+// Quota tables use integer soft deletion: active = 0, soft-deleted = id.
+func (q *Queries) QuotaGetProjectLimits(ctx context.Context) ([]QuotaGetProjectLimitsRow, error) {
+	rows, err := q.db.QueryContext(ctx, QuotaGetProjectLimits)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []QuotaGetProjectLimitsRow
+	for rows.Next() {
+		var i QuotaGetProjectLimitsRow
+		if err := rows.Scan(&i.ProjectID, &i.Resource, &i.HardLimit); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const QuotaGetShareTypeLimits = `-- name: QuotaGetShareTypeLimits :many
+SELECT q.project_id, q.share_type_id, COALESCE(st.name, '') AS share_type_name,
+       q.resource, q.hard_limit
+FROM project_share_type_quotas q
+JOIN share_types st ON st.id = q.share_type_id AND st.deleted = 'False'
+WHERE q.deleted = 0 AND q.project_id <> ''
+`
+
+type QuotaGetShareTypeLimitsRow struct {
+	ProjectID     string
+	ShareTypeID   string
+	ShareTypeName string
+	Resource      string
+	HardLimit     sql.NullInt32
+}
+
+func (q *Queries) QuotaGetShareTypeLimits(ctx context.Context) ([]QuotaGetShareTypeLimitsRow, error) {
+	rows, err := q.db.QueryContext(ctx, QuotaGetShareTypeLimits)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []QuotaGetShareTypeLimitsRow
+	for rows.Next() {
+		var i QuotaGetShareTypeLimitsRow
+		if err := rows.Scan(
+			&i.ProjectID,
+			&i.ShareTypeID,
+			&i.ShareTypeName,
+			&i.Resource,
+			&i.HardLimit,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const QuotaGetUserLimits = `-- name: QuotaGetUserLimits :many
+SELECT project_id, user_id, resource, hard_limit
+FROM project_user_quotas
+WHERE deleted = 0 AND project_id <> ''
+`
+
+type QuotaGetUserLimitsRow struct {
+	ProjectID string
+	UserID    string
+	Resource  string
+	HardLimit sql.NullInt32
+}
+
+// User overrides are independent of project and share-type overrides.
+func (q *Queries) QuotaGetUserLimits(ctx context.Context) ([]QuotaGetUserLimitsRow, error) {
+	rows, err := q.db.QueryContext(ctx, QuotaGetUserLimits)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []QuotaGetUserLimitsRow
+	for rows.Next() {
+		var i QuotaGetUserLimitsRow
+		if err := rows.Scan(
+			&i.ProjectID,
+			&i.UserID,
+			&i.Resource,
+			&i.HardLimit,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const QuotaUsageGetAll = `-- name: QuotaUsageGetAll :many
+SELECT
+    project_id,
+    resource,
+    in_use,
+    reserved
+FROM
+    quota_usages
+WHERE
+    deleted = 0 AND project_id <> ''
+`
+
+type QuotaUsageGetAllRow struct {
+	ProjectID sql.NullString
+	Resource  sql.NullString
+	InUse     sql.NullInt32
+	Reserved  sql.NullInt32
+}
+
+// Raw accounting rows across users and share types; do not aggregate.
+func (q *Queries) QuotaUsageGetAll(ctx context.Context) ([]QuotaUsageGetAllRow, error) {
+	rows, err := q.db.QueryContext(ctx, QuotaUsageGetAll)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []QuotaUsageGetAllRow
+	for rows.Next() {
+		var i QuotaUsageGetAllRow
+		if err := rows.Scan(
+			&i.ProjectID,
+			&i.Resource,
+			&i.InUse,
+			&i.Reserved,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const QuotaUsageGetProjectTotals = `-- name: QuotaUsageGetProjectTotals :many
+SELECT project_id, resource,
+       CAST(SUM(COALESCE(in_use, 0)) AS SIGNED) AS in_use,
+       CAST(SUM(COALESCE(reserved, 0)) AS SIGNED) AS reserved
+FROM quota_usages
+WHERE deleted = 0 AND project_id <> '' AND share_type_id IS NULL
+GROUP BY project_id, resource
+`
+
+type QuotaUsageGetProjectTotalsRow struct {
+	ProjectID sql.NullString
+	Resource  sql.NullString
+	InUse     int64
+	Reserved  int64
+}
+
+// Manila _quota_usage_get_all(project): sum users only where share_type_id
+// IS NULL. Share-type accounting duplicates the same allocations and must
+// never be added to project totals. A NULL user is a legacy/project row.
+func (q *Queries) QuotaUsageGetProjectTotals(ctx context.Context) ([]QuotaUsageGetProjectTotalsRow, error) {
+	rows, err := q.db.QueryContext(ctx, QuotaUsageGetProjectTotals)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []QuotaUsageGetProjectTotalsRow
+	for rows.Next() {
+		var i QuotaUsageGetProjectTotalsRow
+		if err := rows.Scan(
+			&i.ProjectID,
+			&i.Resource,
+			&i.InUse,
+			&i.Reserved,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const QuotaUsageGetShareTypeTotals = `-- name: QuotaUsageGetShareTypeTotals :many
+SELECT u.project_id, u.share_type_id, COALESCE(st.name, '') AS share_type_name,
+       u.resource,
+       CAST(SUM(COALESCE(u.in_use, 0)) AS SIGNED) AS in_use,
+       CAST(SUM(COALESCE(u.reserved, 0)) AS SIGNED) AS reserved
+FROM quota_usages u
+JOIN share_types st ON st.id = u.share_type_id AND st.deleted = 'False'
+WHERE u.deleted = 0 AND u.project_id <> ''
+GROUP BY u.project_id, u.share_type_id, st.name, u.resource
+`
+
+type QuotaUsageGetShareTypeTotalsRow struct {
+	ProjectID     sql.NullString
+	ShareTypeID   sql.NullString
+	ShareTypeName string
+	Resource      sql.NullString
+	InUse         int64
+	Reserved      int64
+}
+
+// Keep share-type usage separate from the per-user project accounting.
+func (q *Queries) QuotaUsageGetShareTypeTotals(ctx context.Context) ([]QuotaUsageGetShareTypeTotalsRow, error) {
+	rows, err := q.db.QueryContext(ctx, QuotaUsageGetShareTypeTotals)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []QuotaUsageGetShareTypeTotalsRow
+	for rows.Next() {
+		var i QuotaUsageGetShareTypeTotalsRow
+		if err := rows.Scan(
+			&i.ProjectID,
+			&i.ShareTypeID,
+			&i.ShareTypeName,
+			&i.Resource,
+			&i.InUse,
+			&i.Reserved,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ShareGetAllWithInstances = `-- name: ShareGetAllWithInstances :many
 SELECT 
     s.id,
@@ -41,8 +350,8 @@ type ShareGetAllWithInstancesRow struct {
 	AvailabilityZone string
 }
 
-// Get share metrics for openstack_sharev2_share_gb and openstack_sharev2_share_status
-// This joins shares with share_instances to get current status and availability zone info
+// Multi-instance view: returns one row per nondeleted instance (or a NULL
+// instance for shares with none). Use ShareGetInventory for logical shares.
 func (q *Queries) ShareGetAllWithInstances(ctx context.Context) ([]ShareGetAllWithInstancesRow, error) {
 	rows, err := q.db.QueryContext(ctx, ShareGetAllWithInstances)
 	if err != nil {
@@ -52,6 +361,119 @@ func (q *Queries) ShareGetAllWithInstances(ctx context.Context) ([]ShareGetAllWi
 	var items []ShareGetAllWithInstancesRow
 	for rows.Next() {
 		var i ShareGetAllWithInstancesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.ProjectID,
+			&i.Size,
+			&i.ShareProto,
+			&i.Status,
+			&i.ShareType,
+			&i.ShareTypeName,
+			&i.AvailabilityZone,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ShareGetInventory = `-- name: ShareGetInventory :many
+SELECT
+    s.id,
+    s.display_name as name,
+    s.project_id,
+    s.size,
+    s.share_proto,
+    si.status,
+    COALESCE(si.share_type_id, '') as share_type,
+    COALESCE(st.name, '') as share_type_name,
+    COALESCE(az.name, '') as availability_zone
+FROM shares s
+LEFT JOIN share_instances si ON si.id = (
+    SELECT candidate.id
+    FROM share_instances candidate
+    WHERE candidate.share_id = s.id AND candidate.deleted = 'False'
+    ORDER BY
+        CASE
+            WHEN EXISTS (
+                SELECT 1 FROM share_instances reverting
+                WHERE reverting.share_id = candidate.share_id
+                  AND reverting.deleted = 'False' AND reverting.status = 'reverting'
+            ) OR NOT EXISTS (
+                SELECT 1 FROM share_instances promoting
+                WHERE promoting.share_id = candidate.share_id
+                  AND promoting.deleted = 'False' AND promoting.status = 'replication_change'
+            ) THEN CASE WHEN candidate.replica_state = 'active' THEN 0 ELSE 1 END
+            ELSE 0
+        END,
+        CASE candidate.status
+            WHEN 'reverting' THEN 0
+            WHEN 'replication_change' THEN 1
+            WHEN 'migrating' THEN 2
+            WHEN 'server_migrating' THEN 3
+            WHEN 'available' THEN 4
+            WHEN 'error' THEN 5
+            -- Unlisted, nontransitional statuses precede transitional statuses.
+            WHEN 'creating' THEN 7
+            WHEN 'deleting' THEN 8
+            WHEN 'manage_starting' THEN 9
+            WHEN 'unmanage_starting' THEN 10
+            WHEN 'extending' THEN 11
+            WHEN 'shrinking' THEN 12
+            WHEN 'migrating_to' THEN 14
+            WHEN 'restoring' THEN 15
+            WHEN 'server_migrating_to' THEN 18
+            WHEN 'backup_restoring' THEN 19
+            WHEN 'backup_creating' THEN 20
+            WHEN 'ensuring' THEN 21
+            ELSE 6
+        END,
+        candidate.id
+    LIMIT 1
+)
+LEFT JOIN share_types st ON si.share_type_id = st.id AND st.deleted = 'False'
+LEFT JOIN availability_zones az ON si.availability_zone_id = az.id AND az.deleted = 'False'
+WHERE s.deleted = 'False'
+ORDER BY s.created_at, s.id
+`
+
+type ShareGetInventoryRow struct {
+	ID               string
+	Name             sql.NullString
+	ProjectID        sql.NullString
+	Size             sql.NullInt32
+	ShareProto       sql.NullString
+	Status           sql.NullString
+	ShareType        string
+	ShareTypeName    string
+	AvailabilityZone string
+}
+
+// One row per nondeleted logical share, including shares with no instances.
+// Manila 2025.2 Share.instance sorts by status, then prefers active replicas
+// unless the first sorted status is replication_change. Reverting precedes
+// replication_change, so its presence restores active-replica preference.
+// Upstream leaves equal/unknown-status ties to relationship order; use instance
+// ID for a stable tie break. All instance metadata comes from the same winner.
+// Retain the existing inventory deletion scope, including retained shares with
+// is_soft_deleted set; that flag is distinct from the row's deleted marker.
+func (q *Queries) ShareGetInventory(ctx context.Context) ([]ShareGetInventoryRow, error) {
+	rows, err := q.db.QueryContext(ctx, ShareGetInventory)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ShareGetInventoryRow
+	for rows.Next() {
+		var i ShareGetInventoryRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,

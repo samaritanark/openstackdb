@@ -17,6 +17,67 @@ type AvailabilityZone struct {
 	Name      sql.NullString
 }
 
+type ProjectShareTypeQuota struct {
+	CreatedAt   sql.NullTime
+	UpdatedAt   sql.NullTime
+	DeletedAt   sql.NullTime
+	Deleted     sql.NullInt32
+	ID          int32
+	ProjectID   string
+	ShareTypeID string
+	Resource    string
+	HardLimit   sql.NullInt32
+}
+
+type ProjectUserQuota struct {
+	CreatedAt sql.NullTime
+	UpdatedAt sql.NullTime
+	DeletedAt sql.NullTime
+	Deleted   sql.NullInt32
+	ID        int32
+	ProjectID string
+	UserID    string
+	Resource  string
+	HardLimit sql.NullInt32
+}
+
+type Quota struct {
+	CreatedAt sql.NullTime
+	UpdatedAt sql.NullTime
+	DeletedAt sql.NullTime
+	Deleted   sql.NullInt32
+	ID        int32
+	ProjectID sql.NullString
+	Resource  sql.NullString
+	HardLimit sql.NullInt32
+}
+
+type QuotaClass struct {
+	CreatedAt sql.NullTime
+	UpdatedAt sql.NullTime
+	DeletedAt sql.NullTime
+	Deleted   sql.NullInt32
+	ID        int32
+	ClassName sql.NullString
+	Resource  sql.NullString
+	HardLimit sql.NullInt32
+}
+
+type QuotaUsage struct {
+	CreatedAt    sql.NullTime
+	UpdatedAt    sql.NullTime
+	DeletedAt    sql.NullTime
+	Deleted      sql.NullInt32
+	ID           int32
+	ProjectID    sql.NullString
+	UserID       sql.NullString
+	ShareTypeID  sql.NullString
+	Resource     sql.NullString
+	InUse        sql.NullInt32
+	Reserved     sql.NullInt32
+	UntilRefresh sql.NullInt32
+}
+
 type Share struct {
 	CreatedAt                        sql.NullTime
 	UpdatedAt                        sql.NullTime
