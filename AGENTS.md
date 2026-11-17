@@ -52,11 +52,17 @@ Integration tests pass schema paths like `"../sql/nova/schema.sql"`. `testutil` 
 
 Filter values may come from end users of the calling service. Treat them as untrusted. The oslo.db connection string is trusted operator configuration, but it holds credentials: never echo it, or the DSN built from it, in errors or logs.
 
+- `docs/explanation/security-model.md`: assets, trust boundaries, threat model, and each control mapped to its code and tests.
+- `docs/reference/security-allowances.md`: the register of deliberate allowances (AL), privileges (PR), controls owned outside the library (EX), residual risks (R), and open findings (SR). Check any security change against it.
+- `.ai/context/security.md`: security policy for agents, including the actions that need explicit confirmation.
+- `local/` is gitignored and must never be committed. Full security review reports live in `local/security-review/<date>/`.
+
 ## Agent workflows (`.ai/`)
 
 Tool-agnostic instructions any agent can follow:
 
-- `.ai/security-review.md`: security review of the current branch's changes.
+- `.ai/context/security.md`: security policy for agents.
+- `.ai/security-review.md`: security review of the current branch's changes, or a baseline review of the whole repository.
 - `.ai/security-review-false-positives.md`: rules for verifying review findings.
 
 Tool-specific wrappers (e.g. `.claude/skills/`) should point at these files rather than duplicate them.

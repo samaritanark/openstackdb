@@ -21,6 +21,8 @@ Score any finding that matches one of these at 1:
 
 ## Precedents
 
+0. **The register decides first.** If the finding matches an entry in `docs/reference/security-allowances.md`, score it at 1 and cite the entry ID. If it contradicts an entry, it is a defect: score it on its merits.
+
 1. **The connection string, environment variables, and CLI flags are trusted operator configuration.** An attack that requires controlling the oslo.db URL is invalid unless the diff makes the library build that URL from filter or caller data. Exception: a change that leaks the password from that URL into errors or output is valid.
 2. **Column and table names passed to `filter.Builder` are trusted** when they are string literals in the package. They are only a finding if a value reachable from an exported API flows into them.
 3. **Filter values are untrusted.** Any path where a filter value reaches the SQL text instead of `Args` is valid SQL injection, even if every current caller passes safe data.

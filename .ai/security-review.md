@@ -2,6 +2,13 @@
 
 Focused security review of the changes on the current branch of `openstackdb`. Read `/AGENTS.md` first for project context.
 
+## Modes
+
+- **Change review (default):** only what this branch introduces, compared with a base ref.
+- **Baseline review:** the whole repository. Use it when the user asks for a full or baseline review, or when there is no diff to review. In step 1, list every hand-written runtime file and every `queries.sql` instead of diffing. In step 2, "introduced by this change set" means "present in the repository".
+
+Before judging anything, read `docs/explanation/security-model.md` and `docs/reference/security-allowances.md`. A candidate that matches an allowance (AL), privilege (PR), external control (EX) or residual risk (R) entry is known and is not reported. A candidate that contradicts an entry is a defect, even if the code looks deliberate.
+
 ## 1. Gather the change set
 
 The default base is `origin/HEAD`. Use another ref if the user names one.
@@ -93,3 +100,13 @@ Severity:
 - **Low**: do not report.
 
 If no findings remain, reply `No high-confidence security findings in this diff.` followed by one line listing the areas you checked.
+
+## 6. Record the review
+
+Do this when the user asks to record the review, and always for a baseline review:
+
+1. **Full report:** write it to `local/security-review/<YYYY-MM-DD>/report.md`. Include the findings, the candidates you rejected and why, and the areas checked. `local/` is gitignored. Reports stay there until their fixes ship, because they may contain working exploit detail.
+2. **Findings:** give each finding the next `SR-<n>` ID and add it to "Open findings" in `docs/reference/security-allowances.md`. Write one sanitized line per finding, without a working exploit.
+3. **Accepted risks:** add each new accepted risk or deliberate behavior to the register as AL, EX or R, and only with the user's agreement.
+4. **History:** add a row to "Review history" in `docs/explanation/security-model.md`.
+5. **Fixed findings:** when a fix ships, mark its SR entry fixed, with the commit, and update the security model's controls table and tests column.
