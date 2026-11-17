@@ -69,6 +69,90 @@ func (q *Queries) AmphoraGetAll(ctx context.Context) ([]AmphoraGetAllRow, error)
 	return items, nil
 }
 
+const ListenerCountByProject = `-- name: ListenerCountByProject :many
+SELECT
+    project_id,
+    COUNT(*) as count
+FROM
+    listener
+WHERE
+    provisioning_status != 'DELETED'
+    AND project_id IS NOT NULL
+    AND project_id != ''
+GROUP BY
+    project_id
+`
+
+type ListenerCountByProjectRow struct {
+	ProjectID sql.NullString
+	Count     int64
+}
+
+func (q *Queries) ListenerCountByProject(ctx context.Context) ([]ListenerCountByProjectRow, error) {
+	rows, err := q.db.QueryContext(ctx, ListenerCountByProject)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListenerCountByProjectRow
+	for rows.Next() {
+		var i ListenerCountByProjectRow
+		if err := rows.Scan(&i.ProjectID, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const LoadBalancerCountByProject = `-- name: LoadBalancerCountByProject :many
+SELECT
+    project_id,
+    COUNT(*) as count
+FROM
+    load_balancer
+WHERE
+    provisioning_status != 'DELETED'
+    AND project_id IS NOT NULL
+    AND project_id != ''
+GROUP BY
+    project_id
+`
+
+type LoadBalancerCountByProjectRow struct {
+	ProjectID sql.NullString
+	Count     int64
+}
+
+func (q *Queries) LoadBalancerCountByProject(ctx context.Context) ([]LoadBalancerCountByProjectRow, error) {
+	rows, err := q.db.QueryContext(ctx, LoadBalancerCountByProject)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LoadBalancerCountByProjectRow
+	for rows.Next() {
+		var i LoadBalancerCountByProjectRow
+		if err := rows.Scan(&i.ProjectID, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const LoadBalancerGetAllWithVIP = `-- name: LoadBalancerGetAllWithVIP :many
 SELECT
     lb.id,
@@ -113,6 +197,48 @@ func (q *Queries) LoadBalancerGetAllWithVIP(ctx context.Context) ([]LoadBalancer
 			&i.Provider,
 			&i.VipAddress,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const PoolCountByProject = `-- name: PoolCountByProject :many
+SELECT
+    project_id,
+    COUNT(*) as count
+FROM
+    pool
+WHERE
+    provisioning_status != 'DELETED'
+    AND project_id IS NOT NULL
+    AND project_id != ''
+GROUP BY
+    project_id
+`
+
+type PoolCountByProjectRow struct {
+	ProjectID sql.NullString
+	Count     int64
+}
+
+func (q *Queries) PoolCountByProject(ctx context.Context) ([]PoolCountByProjectRow, error) {
+	rows, err := q.db.QueryContext(ctx, PoolCountByProject)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PoolCountByProjectRow
+	for rows.Next() {
+		var i PoolCountByProjectRow
+		if err := rows.Scan(&i.ProjectID, &i.Count); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -172,6 +298,132 @@ func (q *Queries) PoolGetAll(ctx context.Context) ([]PoolGetAllRow, error) {
 			&i.LoadBalancerID,
 			&i.ProvisioningStatus,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const QuotaGetAll = `-- name: QuotaGetAll :many
+SELECT
+    project_id,
+    health_monitor,
+    listener,
+    load_balancer,
+    member,
+    pool,
+    l7policy,
+    l7rule
+FROM
+    quotas
+`
+
+type QuotaGetAllRow struct {
+	ProjectID     string
+	HealthMonitor sql.NullInt32
+	Listener      sql.NullInt32
+	LoadBalancer  sql.NullInt32
+	Member        sql.NullInt32
+	Pool          sql.NullInt32
+	L7policy      sql.NullInt32
+	L7rule        sql.NullInt32
+}
+
+// Per-project Octavia quota limits. NULL column means no explicit override.
+func (q *Queries) QuotaGetAll(ctx context.Context) ([]QuotaGetAllRow, error) {
+	rows, err := q.db.QueryContext(ctx, QuotaGetAll)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []QuotaGetAllRow
+	for rows.Next() {
+		var i QuotaGetAllRow
+		if err := rows.Scan(
+			&i.ProjectID,
+			&i.HealthMonitor,
+			&i.Listener,
+			&i.LoadBalancer,
+			&i.Member,
+			&i.Pool,
+			&i.L7policy,
+			&i.L7rule,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const QuotaUsageGetAll = `-- name: QuotaUsageGetAll :many
+SELECT project_id, 'load_balancer' AS resource, CAST(COUNT(*) AS SIGNED) AS in_use
+FROM load_balancer
+WHERE provisioning_status != 'DELETED' AND project_id IS NOT NULL AND project_id != ''
+GROUP BY project_id
+UNION ALL
+SELECT project_id, 'listener' AS resource, CAST(COUNT(*) AS SIGNED) AS in_use
+FROM listener
+WHERE provisioning_status != 'DELETED' AND project_id IS NOT NULL AND project_id != ''
+GROUP BY project_id
+UNION ALL
+SELECT project_id, 'pool' AS resource, CAST(COUNT(*) AS SIGNED) AS in_use
+FROM pool
+WHERE provisioning_status != 'DELETED' AND project_id IS NOT NULL AND project_id != ''
+GROUP BY project_id
+UNION ALL
+SELECT project_id, 'member' AS resource, CAST(COUNT(*) AS SIGNED) AS in_use
+FROM member
+WHERE provisioning_status != 'DELETED' AND project_id IS NOT NULL AND project_id != ''
+GROUP BY project_id
+UNION ALL
+SELECT project_id, 'health_monitor' AS resource, CAST(COUNT(*) AS SIGNED) AS in_use
+FROM health_monitor
+WHERE provisioning_status != 'DELETED' AND project_id IS NOT NULL AND project_id != ''
+GROUP BY project_id
+UNION ALL
+SELECT project_id, 'l7policy' AS resource, CAST(COUNT(*) AS SIGNED) AS in_use
+FROM l7policy
+WHERE provisioning_status != 'DELETED' AND project_id IS NOT NULL AND project_id != ''
+GROUP BY project_id
+UNION ALL
+SELECT project_id, 'l7rule' AS resource, CAST(COUNT(*) AS SIGNED) AS in_use
+FROM l7rule
+WHERE provisioning_status != 'DELETED' AND project_id IS NOT NULL AND project_id != ''
+GROUP BY project_id
+`
+
+type QuotaUsageGetAllRow struct {
+	ProjectID sql.NullString
+	Resource  string
+	InUse     int64
+}
+
+// Rebuild counts using Octavia check_quota_met's project/status predicate.
+// Each table is counted independently: no parent join can multiply rows.
+func (q *Queries) QuotaUsageGetAll(ctx context.Context) ([]QuotaUsageGetAllRow, error) {
+	rows, err := q.db.QueryContext(ctx, QuotaUsageGetAll)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []QuotaUsageGetAllRow
+	for rows.Next() {
+		var i QuotaUsageGetAllRow
+		if err := rows.Scan(&i.ProjectID, &i.Resource, &i.InUse); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

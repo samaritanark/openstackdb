@@ -141,6 +141,51 @@ go test -race -tags integration -timeout 15m ./...
 Exporter collector tests continue to verify metric output in the exporter
 repository. This module owns connection, predicate, and database query tests.
 
+### Octavia quota usage validation
+
+`NewQuotaRepository(db).GetAll(ctx)` / `QuotaGetAll` returns stored project quota
+limits for load balancers, listeners, pools, health monitors, members, L7 policies
+and L7 rules. Each limit is a `sql.NullInt32`: NULL means no explicit override,
+and zero and -1 remain distinct values. The caller resolves configured defaults.
+This read preserves quota-table project keys, including empty strings.
+
+`QuotaRepository.GetUsage` / `QuotaUsageGetAll` rebuilds project counts for all
+seven quota resources independently, using `provisioning_status != 'DELETED'`.
+It follows the count-rebuild predicate in
+[Octavia 2025.2 `check_quota_met`](https://opendev.org/openstack/octavia/src/branch/stable/2025.2/octavia/db/repositories.py), not
+its cached `in_use_*` columns. Differences from the enforcement counters can
+persist until reconciled.
+Counts include ERROR and pending statuses. Each object uses its own project and
+status, including children of deleted parents or parents owned by another project.
+There are no parent joins to multiply counts. Results contain only nonzero
+project/resource groups, including projects without quota rows, with int64 usage.
+NULL and empty project IDs are excluded by `QuotaUsageGetAll` and the
+`LoadBalancerCountByProject`, `ListenerCountByProject`, and `PoolCountByProject`
+queries. Valid-project counts use the same deleted-resource predicate in all
+four queries. The schema fixtures contain only fields needed for these tests,
+not a complete OpenStack migration or proposed production schema change.
+
+Portable SQL semantics tests (Python standard library, in-memory SQLite):
+
+```sh
+python3 -m unittest discover -s tests -p octavia_quota_sql_test.py -v
+```
+
+Run these tests explicitly when the CI workflow does not include Python SQL-test discovery.
+Project-a counts are distinct (4 through 10)
+for load balancers, listeners, pools, members, health monitors, L7 policies and
+L7 rules, respectively; both SQL test paths assert the exact project/resource map.
+These exercise the generated SQL and schema/seed fixtures without a database service,
+but do not establish MySQL/MariaDB dialect or deployment compatibility. Native
+query/scanning validation against the disposable MariaDB test container is:
+
+```sh
+go test -race -tags integration -timeout 15m ./octavia/db/repositories -run TestQuotaUsageMariaDB -count=1 -v
+```
+
+This integration test requires Docker and never reads production credentials.
+Regenerate query code with sqlc v1.30.0 (`sqlc generate`).
+
 ## License
 
 Apache-2.0. See LICENSE and NOTICE.
