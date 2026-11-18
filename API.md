@@ -77,6 +77,7 @@ with identical semantics upstream.
 - Current exporter queries retain their existing deleted/hidden/status predicates; they are not full upstream administrative listings.
 - Errors are Go/database errors; absent single resources return `sql.ErrNoRows` rather than Python service-specific exceptions.
 - Aggregate queries such as `QuotaGetAllWithUsage`, `GetResourceProviderInventories`, and `GetResourceCountsByProject` are explicitly library extensions.
+- Cinder quota queries exclude NULL and empty project IDs because Cinder quota rows belong to Keystone projects. The older Cinder exporter quota queries are unchanged.
 - No cross-cell routing or historic schema negotiation is performed. Nova archive access is explicitly selected with `InstanceFilters.Archive`.
 
 ## Resource lifecycle and metadata reads
@@ -87,6 +88,8 @@ with identical semantics upstream.
 | `InstanceExtraGetByInstanceUUID` | Nova `instance_extra_get_by_instance_uuid` | Raw flavor projection, optional shadow table; absent rows return `sql.ErrNoRows`. |
 | `InstanceTypeGetAll` | [Historical Nova `instance_type_get_all`](https://github.com/openstack/nova/blob/2012.1/nova/db/sqlalchemy/api.py) | Legacy type identity projection, `Inactive`, explicit `Archived` extension. |
 | `VolumeTypeGetAll` | Cinder `volume_type_get_all(inactive=...)` | Optional `Inactive` includes deleted types; returns identity rows rather than a keyed Python dictionary. |
+| `QuotaGetAllByProject`, `QuotaUsageGetAllByProject`, `QuotaClassGetDefaults` | [Cinder DB API](https://github.com/openstack/cinder/blob/master/cinder/db/api.py) functions of the same names | Every project at once; raw rows instead of per-project dictionaries; NULL and empty project IDs excluded. Usage is Cinder's cached accounting. |
+| `ParseQuotaResource` | Cinder `VolumeTypeResource` key format in `cinder/quota.py` | Splits `<part>_<volume type name>` keys. Hand-written; re-check the global resource list on Cinder upgrades. |
 | `GetProject` | [Keystone resource backend `get_project`](https://github.com/openstack/keystone/blob/master/keystone/resource/backends/sql.py) | ID/name/enabled/domain projection; does not implement request authorization or hidden-reference policy. |
 
 Instance and image filtered/single-resource APIs return richer record types with

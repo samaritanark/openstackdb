@@ -94,18 +94,31 @@ WHERE
 SELECT id, project_id, size, volume_type_id, status, created_at, deleted_at
 FROM volumes WHERE deleted = 0;
 
--- name: QuotaGetActiveLimits :many
--- Aggregate and type-specific resources share this table. Do not join usage:
--- projects using defaults may have accounting without any override.
+-- name: QuotaGetAllByProject :many
+-- Upstream quota_get_all_by_project for every project. The table holds both
+-- aggregate resources (volumes, gigabytes, ...) and per-volume-type resources
+-- (volumes_<type name>, ...). See ParseQuotaResource. Rows with a NULL or empty
+-- project ID are excluded.
 SELECT project_id, resource, hard_limit
-FROM quotas WHERE deleted = 0;
+FROM quotas
+WHERE deleted = 0 AND project_id <> ''
+ORDER BY project_id, resource, id;
 
--- name: QuotaGetActiveUsage :many
--- Accounting is already per project/resource. Never add typed resources to
--- aggregate resources, or sum duplicate active rows as if they were users.
+-- name: QuotaUsageGetAllByProject :many
+-- Upstream quota_usage_get_all_by_project for every project. These are Cinder's
+-- cached usage counters, not a live count of volumes and snapshots, and can
+-- drift until Cinder refreshes them. reserved already counts open reservations.
+-- Aggregate and per-volume-type resources describe the same allocations, so
+-- never add them together.
 SELECT project_id, resource, in_use, reserved
-FROM quota_usages WHERE deleted = 0;
+FROM quota_usages
+WHERE deleted = 0 AND project_id <> ''
+ORDER BY project_id, resource, id;
 
--- name: QuotaGetDefaultClassLimits :many
+-- name: QuotaClassGetDefaults :many
+-- Upstream quota_class_get_defaults. The persisted 'default' class overrides
+-- service configuration defaults.
 SELECT resource, hard_limit
-FROM quota_classes WHERE deleted = 0 AND class_name = 'default';
+FROM quota_classes
+WHERE deleted = 0 AND class_name = 'default'
+ORDER BY resource, id;
