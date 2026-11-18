@@ -21,7 +21,7 @@ repository objects. Placement queries live under `placement/objects`.
 | `ironic/db` | `GetNodeList` |
 | `magnum/db` | `GetClusterList` |
 | `manila/db` | `ShareGetAllWithInstances` |
-| `neutron/db` | `GetAgents`, `GetHARouterAgentPortBindingsWithAgents`, `GetRouters` |
+| `neutron/db` | `GetAgents`, `GetHARouterAgentPortBindingsWithAgents`, `GetRouters`, `GetQuotas`, `GetReservationsForResources` |
 | `octavia/db/repositories` | `PoolRepository`, `LoadBalancerRepository`, `AmphoraRepository` |
 | `placement/objects` | Resource provider inventory and allocation projections |
 

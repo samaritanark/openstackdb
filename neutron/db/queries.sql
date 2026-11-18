@@ -218,7 +218,11 @@ SELECT
 FROM
     quotas q
 WHERE
-    q.project_id IS NOT NULL;
+    q.project_id IS NOT NULL
+ORDER BY
+    q.project_id,
+    q.resource,
+    q.id;
 
 -- name: GetResourceCountsByProject :many
 SELECT
@@ -274,3 +278,21 @@ SELECT
     'subnetpool' as resource,
     CAST(COUNT(*) AS SIGNED) as cnt
 FROM subnetpools WHERE project_id IS NOT NULL GROUP BY project_id;
+
+-- name: GetReservationsForResources :many
+-- Mirrors neutron.db.quota.api.get_reservations_for_resources(expired=False):
+-- active means expiration >= now, evaluated on the database clock in UTC
+-- because Neutron writes expirations with utcnow(). Rows are returned per
+-- reservation delta, unaggregated, for every project with a non-NULL owner.
+SELECT
+    r.id AS reservation_id,
+    r.project_id,
+    r.expiration,
+    d.resource,
+    d.amount
+FROM reservations r
+JOIN resourcedeltas d ON d.reservation_id = r.id
+WHERE r.expiration >= UTC_TIMESTAMP()
+  AND r.project_id IS NOT NULL
+  AND d.resource IN (sqlc.slice('resources'))
+ORDER BY r.project_id, d.resource, r.id;

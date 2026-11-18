@@ -8,6 +8,7 @@ package neutron
 import (
 	"context"
 	"database/sql"
+	"strings"
 )
 
 const GetAgents = `-- name: GetAgents :many
@@ -476,6 +477,10 @@ FROM
     quotas q
 WHERE
     q.project_id IS NOT NULL
+ORDER BY
+    q.project_id,
+    q.resource,
+    q.id
 `
 
 type GetQuotasRow struct {
@@ -494,6 +499,72 @@ func (q *Queries) GetQuotas(ctx context.Context) ([]GetQuotasRow, error) {
 	for rows.Next() {
 		var i GetQuotasRow
 		if err := rows.Scan(&i.ProjectID, &i.Resource, &i.Limit); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const GetReservationsForResources = `-- name: GetReservationsForResources :many
+SELECT
+    r.id AS reservation_id,
+    r.project_id,
+    r.expiration,
+    d.resource,
+    d.amount
+FROM reservations r
+JOIN resourcedeltas d ON d.reservation_id = r.id
+WHERE r.expiration >= UTC_TIMESTAMP()
+  AND r.project_id IS NOT NULL
+  AND d.resource IN (/*SLICE:resources*/?)
+ORDER BY r.project_id, d.resource, r.id
+`
+
+type GetReservationsForResourcesRow struct {
+	ReservationID string
+	ProjectID     sql.NullString
+	Expiration    sql.NullTime
+	Resource      string
+	Amount        sql.NullInt32
+}
+
+// Mirrors neutron.db.quota.api.get_reservations_for_resources(expired=False):
+// active means expiration >= now, evaluated on the database clock in UTC
+// because Neutron writes expirations with utcnow(). Rows are returned per
+// reservation delta, unaggregated, for every project with a non-NULL owner.
+func (q *Queries) GetReservationsForResources(ctx context.Context, resources []string) ([]GetReservationsForResourcesRow, error) {
+	query := GetReservationsForResources
+	var queryParams []interface{}
+	if len(resources) > 0 {
+		for _, v := range resources {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:resources*/?", strings.Repeat(",?", len(resources))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:resources*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetReservationsForResourcesRow
+	for rows.Next() {
+		var i GetReservationsForResourcesRow
+		if err := rows.Scan(
+			&i.ReservationID,
+			&i.ProjectID,
+			&i.Expiration,
+			&i.Resource,
+			&i.Amount,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

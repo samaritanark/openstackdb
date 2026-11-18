@@ -94,3 +94,45 @@ lifecycle metadata. Their fixed current-resource queries remain unchanged for
 exporter consumers. Deleted volume types and legacy type tables are only read
 when explicitly requested. Legacy table availability is a caller/deployment
 concern; errors are propagated rather than hidden.
+
+### Neutron quota reservations
+
+| Go operation | Upstream naming source | Scope |
+| --- | --- | --- |
+| `GetReservationsForResources` | [Neutron `get_reservations_for_resources(..., expired=False)`](https://github.com/openstack/neutron/blob/master/neutron/db/quota/api.py) | All projects instead of one; raw per-delta rows instead of a per-resource sum. |
+
+`neutron/db.Queries.GetReservationsForResources(ctx, resources)` returns one row
+per active reservation delta: `ReservationID`, `ProjectID`, `Expiration`,
+`Resource`, and `Amount`. Rows are ordered by project, resource, and reservation
+ID. Amounts are returned as stored, including NULL and negative values; summing
+them and deciding how to treat malformed amounts is the caller's job.
+
+A reservation is active when `expiration >= UTC_TIMESTAMP()`, the same inclusive
+boundary Neutron uses. The comparison runs on the database clock, so skew
+between the caller and the Neutron servers does not change the result. Neutron
+writes expirations in UTC, so the comparison uses `UTC_TIMESTAMP()` rather than
+the session-time-zone `NOW()`. NULL expirations are never active.
+
+`resources` is a positional argument, not a `...Filters` struct, and follows
+upstream: a nil or empty list matches nothing rather than every resource. Pass
+the resources to monitor explicitly, for example `floatingip`, `network`, `port`,
+`rbac_policy`, `router`, `security_group`, `security_group_rule`, `subnet`, and
+`subnetpool`.
+
+NULL owners are excluded and empty-string owners are kept. `GetQuotas` and
+`GetResourceCountsByProject` use the same owner policy, so limits, usage, and
+reservations can be joined on `ProjectID` without special cases. `GetQuotas`
+returns rows ordered by project, resource, and quota ID, so callers that collapse
+duplicate project/resource rows get a stable result.
+
+Upstream Neutron defines no index on `reservations.expiration` or
+`reservations.project_id`; the schema fixture mirrors that. Each call therefore
+scans `reservations` and joins `resourcedeltas` through the index InnoDB creates
+for its `reservation_id` foreign key. This is the same access path Neutron's own
+quota engine uses, and the table stays small while Neutron's expired-reservation
+cleanup runs. If cleanup stalls, the table and this query's cost grow together.
+
+The schema tables are local fixtures, not production migrations. Separate reads
+do not share a snapshot unless the caller uses `WithTx` with a suitable isolation
+level. Query, scan, row-iteration, and context errors propagate through the
+generated API; an error must never be treated as zero reservations.

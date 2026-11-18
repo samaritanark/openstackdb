@@ -242,3 +242,19 @@ CREATE TABLE
         `tag` varchar(255) NOT NULL,
         PRIMARY KEY (`standard_attr_id`, `tag`)
     );
+
+-- Neutron quota reservation storage (local query fixture, not a migration).
+-- Mirrors upstream neutron/db/quota/models.py: no index on expiration or
+-- project_id (HasProjectNoIndex); InnoDB indexes reservation_id for the FK.
+CREATE TABLE `reservations` (
+  `id` varchar(36) NOT NULL PRIMARY KEY,
+  `project_id` varchar(255) DEFAULT NULL,
+  `expiration` datetime DEFAULT NULL
+);
+CREATE TABLE `resourcedeltas` (
+  `resource` varchar(255) NOT NULL,
+  `reservation_id` varchar(36) NOT NULL,
+  `amount` int DEFAULT NULL,
+  PRIMARY KEY (`resource`, `reservation_id`),
+  FOREIGN KEY (`reservation_id`) REFERENCES `reservations` (`id`) ON DELETE CASCADE
+);
