@@ -1,0 +1,44 @@
+-- Synthetic Manila 2025.2 accounting: users and share types overlap.
+INSERT INTO share_types (id, name, deleted) VALUES ('type-a', 'gold', 'False'), ('type-b', 'silver', 'False'), ('type-deleted', 'retired', 'deleted-uuid');
+INSERT INTO quotas (project_id, resource, hard_limit, deleted) VALUES ('project-a', 'shares', 20, 0);
+INSERT INTO quotas (project_id, resource, hard_limit, deleted) VALUES ('project-a', 'gigabytes', NULL, 0);
+INSERT INTO quotas (project_id, resource, hard_limit, deleted) VALUES ('project-a', 'snapshots', -1, 0);
+INSERT INTO quotas (project_id, resource, hard_limit, deleted) VALUES ('project-a', 'snapshot_gigabytes', 23, 0);
+INSERT INTO quotas (project_id, resource, hard_limit, deleted) VALUES ('project-a', 'share_networks', 0, 0);
+INSERT INTO quotas (project_id, resource, hard_limit, deleted) VALUES ('project-a', 'share_replicas', 25, 0);
+INSERT INTO quotas (project_id, resource, hard_limit, deleted) VALUES ('project-a', 'replica_gigabytes', 26, 0);
+INSERT INTO quotas (project_id, resource, hard_limit, deleted) VALUES ('project-a', 'share_groups', 27, 0);
+INSERT INTO quotas (project_id, resource, hard_limit, deleted) VALUES ('project-a', 'share_group_snapshots', 28, 0);
+INSERT INTO quotas (project_id, resource, hard_limit, deleted) VALUES ('project-a', 'backups', 29, 0);
+INSERT INTO quotas (project_id, resource, hard_limit, deleted) VALUES ('project-a', 'backup_gigabytes', 30, 0);
+INSERT INTO quotas (project_id, resource, hard_limit, deleted) VALUES ('project-a', 'per_share_gigabytes', 31, 0);
+INSERT INTO quotas (project_id, resource, hard_limit, deleted) VALUES ('project-a', 'shares', 999, -1), ('deleted-only', 'shares', 999, -1), (NULL, 'shares', 999, 0), ('', 'shares', 999, 0);
+INSERT INTO quota_classes (class_name, resource, hard_limit, deleted) VALUES ('default', 'shares', 99, 0), ('default', 'snapshot_gigabytes', 777, 0), ('default', 'backups', NULL, 0), ('other', 'shares', 12345, 0), ('default', 'shares', 888, -1);
+INSERT INTO project_user_quotas (project_id, user_id, resource, hard_limit, deleted) VALUES ('project-a', 'user-a', 'shares', 1, 0), ('project-a', 'user-b', 'shares', 2, 0), ('user-only', 'user-c', 'shares', 3, 0), ('deleted-only', 'user-a', 'shares', 999, -1);
+INSERT INTO project_share_type_quotas (project_id, share_type_id, resource, hard_limit, deleted) VALUES ('project-a', 'type-a', 'shares', 7, 0), ('project-a', 'type-a', 'gigabytes', NULL, 0), ('project-a', 'type-b', 'shares', 0, 0), ('type-limit-only', 'type-b', 'snapshots', -1, 0), ('project-a', 'type-a', 'shares', 999, -1), ('deleted-only', 'type-deleted', 'shares', 999, 0);
+INSERT INTO quota_usages (project_id, user_id, share_type_id, resource, in_use, reserved, deleted) VALUES ('project-a', 'user-a', NULL, 'shares', 1, 1, 0), ('project-a', 'user-b', NULL, 'shares', 10, 2, 0);
+INSERT INTO quota_usages (project_id, user_id, share_type_id, resource, in_use, reserved, deleted) VALUES ('project-a', 'user-a', NULL, 'gigabytes', 2, 1, 0), ('project-a', 'user-b', NULL, 'gigabytes', 10, 2, 0);
+INSERT INTO quota_usages (project_id, user_id, share_type_id, resource, in_use, reserved, deleted) VALUES ('project-a', 'user-a', NULL, 'snapshots', 3, 1, 0), ('project-a', 'user-b', NULL, 'snapshots', 10, 2, 0);
+INSERT INTO quota_usages (project_id, user_id, share_type_id, resource, in_use, reserved, deleted) VALUES ('project-a', 'user-a', NULL, 'snapshot_gigabytes', 4, 1, 0), ('project-a', 'user-b', NULL, 'snapshot_gigabytes', 10, 2, 0);
+INSERT INTO quota_usages (project_id, user_id, share_type_id, resource, in_use, reserved, deleted) VALUES ('project-a', 'user-a', NULL, 'share_networks', 5, 1, 0), ('project-a', 'user-b', NULL, 'share_networks', 10, 2, 0);
+INSERT INTO quota_usages (project_id, user_id, share_type_id, resource, in_use, reserved, deleted) VALUES ('project-a', 'user-a', NULL, 'share_replicas', 6, 1, 0), ('project-a', 'user-b', NULL, 'share_replicas', 10, 2, 0);
+INSERT INTO quota_usages (project_id, user_id, share_type_id, resource, in_use, reserved, deleted) VALUES ('project-a', 'user-a', NULL, 'replica_gigabytes', 7, 1, 0), ('project-a', 'user-b', NULL, 'replica_gigabytes', 10, 2, 0);
+INSERT INTO quota_usages (project_id, user_id, share_type_id, resource, in_use, reserved, deleted) VALUES ('project-a', 'user-a', NULL, 'share_groups', 8, 1, 0), ('project-a', 'user-b', NULL, 'share_groups', 10, 2, 0);
+INSERT INTO quota_usages (project_id, user_id, share_type_id, resource, in_use, reserved, deleted) VALUES ('project-a', 'user-a', NULL, 'share_group_snapshots', 9, 1, 0), ('project-a', 'user-b', NULL, 'share_group_snapshots', 10, 2, 0);
+INSERT INTO quota_usages (project_id, user_id, share_type_id, resource, in_use, reserved, deleted) VALUES ('project-a', 'user-a', NULL, 'backups', 10, 1, 0), ('project-a', 'user-b', NULL, 'backups', 10, 2, 0);
+INSERT INTO quota_usages (project_id, user_id, share_type_id, resource, in_use, reserved, deleted) VALUES ('project-a', 'user-a', NULL, 'backup_gigabytes', 11, 1, 0), ('project-a', 'user-b', NULL, 'backup_gigabytes', 10, 2, 0);
+INSERT INTO quota_usages (project_id, user_id, share_type_id, resource, in_use, reserved, deleted) VALUES ('project-a', NULL, 'type-a', 'shares', 4, 2, 0);
+INSERT INTO quota_usages (project_id, user_id, share_type_id, resource, in_use, reserved, deleted) VALUES ('project-a', NULL, 'type-a', 'gigabytes', 5, 2, 0);
+INSERT INTO quota_usages (project_id, user_id, share_type_id, resource, in_use, reserved, deleted) VALUES ('project-a', NULL, 'type-a', 'snapshots', 6, 2, 0);
+INSERT INTO quota_usages (project_id, user_id, share_type_id, resource, in_use, reserved, deleted) VALUES ('project-a', NULL, 'type-a', 'snapshot_gigabytes', 7, 2, 0);
+INSERT INTO quota_usages (project_id, user_id, share_type_id, resource, in_use, reserved, deleted) VALUES ('project-a', NULL, 'type-a', 'share_replicas', 8, 2, 0);
+INSERT INTO quota_usages (project_id, user_id, share_type_id, resource, in_use, reserved, deleted) VALUES ('project-a', NULL, 'type-a', 'replica_gigabytes', 9, 2, 0);
+INSERT INTO quota_usages (project_id, user_id, share_type_id, resource, in_use, reserved, deleted) VALUES ('project-a', NULL, NULL, 'shares', 2, 4, 0), ('project-a', 'legacy-a', 'type-b', 'shares', 3, 1, 0), ('project-a', 'legacy-b', 'type-b', 'shares', 5, 2, 0), ('project-a', NULL, '', 'shares', 10000, 1000, 0), ('project-a', 'user-a', NULL, 'shares', 9999, 9999, -1), ('project-a', NULL, 'type-deleted', 'shares', 9999, 9999, 0), ('usage-only', 'user-c', NULL, 'shares', 5, 2, 0), ('usage-only', 'user-c', NULL, 'gigabytes', 2000000000, 0, 0), ('usage-only', 'user-d', NULL, 'gigabytes', 2000000000, 0, 0), ('type-usage-only', NULL, 'type-a', 'snapshots', 1, 2, 0), ('null-usage', NULL, NULL, 'shares', NULL, NULL, 0), ('deleted-only', NULL, NULL, 'shares', 999, 999, -1), ('', NULL, NULL, 'shares', 999, 999, 0), (NULL, NULL, NULL, 'shares', 999, 999, 0);
+-- Object rows deliberately disagree with quota accounting. Queries use the latter.
+INSERT INTO shares (id, project_id, size, deleted) VALUES ('share-live', 'project-a', 100, 'False'), ('share-deleted', 'project-a', 9999, 'deleted-uuid');
+-- Manila soft deletion stores the row primary key, not a boolean.
+UPDATE project_share_type_quotas SET deleted = id WHERE deleted = -1;
+UPDATE project_user_quotas SET deleted = id WHERE deleted = -1;
+UPDATE quota_classes SET deleted = id WHERE deleted = -1;
+UPDATE quota_usages SET deleted = id WHERE deleted = -1;
+UPDATE quotas SET deleted = id WHERE deleted = -1;

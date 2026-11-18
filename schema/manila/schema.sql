@@ -87,3 +87,72 @@ CREATE TABLE
         CONSTRAINT `si_share_fk` FOREIGN KEY (`share_id`) REFERENCES `shares` (`id`),
         CONSTRAINT `si_st_id_fk` FOREIGN KEY (`share_type_id`) REFERENCES `share_types` (`id`)
     );
+
+-- Manila project quota overrides (manila/db/sqlalchemy/models.py Quota).
+-- Quota tables inherit integer SoftDeleteMixin: active = 0, soft-deleted = id.
+-- Manila 2025.2 migrations use SQLAlchemy default=0, not server_default;
+-- raw SQL inserts must supply deleted explicitly for active rows.
+CREATE TABLE
+    `quotas` (
+        `created_at` datetime(6) DEFAULT NULL,
+        `updated_at` datetime(6) DEFAULT NULL,
+        `deleted_at` datetime(6) DEFAULT NULL,
+        `deleted` INTEGER,
+        `id` int NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        `project_id` varchar(255) DEFAULT NULL,
+        `resource` varchar(255) DEFAULT NULL,
+        `hard_limit` int DEFAULT NULL
+    );
+
+CREATE TABLE
+    `quota_usages` (
+        `created_at` datetime(6) DEFAULT NULL,
+        `updated_at` datetime(6) DEFAULT NULL,
+        `deleted_at` datetime(6) DEFAULT NULL,
+        `deleted` INTEGER,
+        `id` int NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        `project_id` varchar(255) DEFAULT NULL,
+        `user_id` varchar(255) DEFAULT NULL,
+        `share_type_id` varchar(36) DEFAULT NULL,
+        `resource` varchar(255) DEFAULT NULL,
+        `in_use` int DEFAULT NULL,
+        `reserved` int DEFAULT NULL,
+        `until_refresh` int DEFAULT NULL
+    );
+
+-- Manila 2025.2 keeps user and share-type overrides in separate tables.
+CREATE TABLE `project_user_quotas` (
+    `created_at` datetime(6) DEFAULT NULL,
+    `updated_at` datetime(6) DEFAULT NULL,
+    `deleted_at` datetime(6) DEFAULT NULL,
+    `deleted` INTEGER,
+    `id` int NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `project_id` varchar(255) NOT NULL,
+    `user_id` varchar(255) NOT NULL,
+    `resource` varchar(255) NOT NULL,
+    `hard_limit` int DEFAULT NULL
+);
+
+CREATE TABLE `project_share_type_quotas` (
+    `created_at` datetime(6) DEFAULT NULL,
+    `updated_at` datetime(6) DEFAULT NULL,
+    `deleted_at` datetime(6) DEFAULT NULL,
+    `deleted` INTEGER,
+    `id` int NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `project_id` varchar(255) NOT NULL,
+    `share_type_id` varchar(36) NOT NULL,
+    `resource` varchar(255) NOT NULL,
+    `hard_limit` int DEFAULT NULL,
+    CONSTRAINT `pstq_share_type_fk` FOREIGN KEY (`share_type_id`) REFERENCES `share_types` (`id`)
+);
+
+CREATE TABLE `quota_classes` (
+    `created_at` datetime(6) DEFAULT NULL,
+    `updated_at` datetime(6) DEFAULT NULL,
+    `deleted_at` datetime(6) DEFAULT NULL,
+    `deleted` INTEGER,
+    `id` int NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `class_name` varchar(255) DEFAULT NULL,
+    `resource` varchar(255) DEFAULT NULL,
+    `hard_limit` int DEFAULT NULL
+);
