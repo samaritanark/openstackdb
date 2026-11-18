@@ -10,27 +10,29 @@ import (
 	"database/sql"
 )
 
-const QuotaGetDefaultLimits = `-- name: QuotaGetDefaultLimits :many
+const QuotaClassGetDefault = `-- name: QuotaClassGetDefault :many
 SELECT resource, hard_limit
 FROM quota_classes
 WHERE deleted = 0 AND class_name = 'default'
+ORDER BY resource, id
 `
 
-type QuotaGetDefaultLimitsRow struct {
+type QuotaClassGetDefaultRow struct {
 	Resource  sql.NullString
 	HardLimit sql.NullInt32
 }
 
-// The persisted 'default' class overrides service configuration defaults.
-func (q *Queries) QuotaGetDefaultLimits(ctx context.Context) ([]QuotaGetDefaultLimitsRow, error) {
-	rows, err := q.db.QueryContext(ctx, QuotaGetDefaultLimits)
+// Upstream quota_class_get_default. The persisted 'default' class overrides
+// service configuration defaults.
+func (q *Queries) QuotaClassGetDefault(ctx context.Context) ([]QuotaClassGetDefaultRow, error) {
+	rows, err := q.db.QueryContext(ctx, QuotaClassGetDefault)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []QuotaGetDefaultLimitsRow
+	var items []QuotaClassGetDefaultRow
 	for rows.Next() {
-		var i QuotaGetDefaultLimitsRow
+		var i QuotaClassGetDefaultRow
 		if err := rows.Scan(&i.Resource, &i.HardLimit); err != nil {
 			return nil, err
 		}
@@ -45,33 +47,30 @@ func (q *Queries) QuotaGetDefaultLimits(ctx context.Context) ([]QuotaGetDefaultL
 	return items, nil
 }
 
-const QuotaGetProjectLimits = `-- name: QuotaGetProjectLimits :many
-SELECT
-    project_id,
-    resource,
-    hard_limit
-FROM
-    quotas
-WHERE
-    deleted = 0 AND project_id <> ''
+const QuotaGetAllByProject = `-- name: QuotaGetAllByProject :many
+SELECT project_id, resource, hard_limit
+FROM quotas
+WHERE deleted = 0 AND project_id <> ''
+ORDER BY project_id, resource, id
 `
 
-type QuotaGetProjectLimitsRow struct {
+type QuotaGetAllByProjectRow struct {
 	ProjectID sql.NullString
 	Resource  sql.NullString
 	HardLimit sql.NullInt32
 }
 
-// Quota tables use integer soft deletion: active = 0, soft-deleted = id.
-func (q *Queries) QuotaGetProjectLimits(ctx context.Context) ([]QuotaGetProjectLimitsRow, error) {
-	rows, err := q.db.QueryContext(ctx, QuotaGetProjectLimits)
+// Upstream quota_get_all_by_project for every project. Quota tables use
+// integer soft deletion: active = 0, soft-deleted = the row's id.
+func (q *Queries) QuotaGetAllByProject(ctx context.Context) ([]QuotaGetAllByProjectRow, error) {
+	rows, err := q.db.QueryContext(ctx, QuotaGetAllByProject)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []QuotaGetProjectLimitsRow
+	var items []QuotaGetAllByProjectRow
 	for rows.Next() {
-		var i QuotaGetProjectLimitsRow
+		var i QuotaGetAllByProjectRow
 		if err := rows.Scan(&i.ProjectID, &i.Resource, &i.HardLimit); err != nil {
 			return nil, err
 		}
@@ -86,31 +85,35 @@ func (q *Queries) QuotaGetProjectLimits(ctx context.Context) ([]QuotaGetProjectL
 	return items, nil
 }
 
-const QuotaGetShareTypeLimits = `-- name: QuotaGetShareTypeLimits :many
-SELECT q.project_id, q.share_type_id, COALESCE(st.name, '') AS share_type_name,
+const QuotaGetAllByProjectAndShareType = `-- name: QuotaGetAllByProjectAndShareType :many
+SELECT q.project_id, q.share_type_id, st.name AS share_type_name,
        q.resource, q.hard_limit
 FROM project_share_type_quotas q
-JOIN share_types st ON st.id = q.share_type_id AND st.deleted = 'False'
+LEFT JOIN share_types st ON st.id = q.share_type_id AND st.deleted = 'False'
 WHERE q.deleted = 0 AND q.project_id <> ''
+ORDER BY q.project_id, q.share_type_id, q.resource, q.id
 `
 
-type QuotaGetShareTypeLimitsRow struct {
+type QuotaGetAllByProjectAndShareTypeRow struct {
 	ProjectID     string
 	ShareTypeID   string
-	ShareTypeName string
+	ShareTypeName sql.NullString
 	Resource      string
 	HardLimit     sql.NullInt32
 }
 
-func (q *Queries) QuotaGetShareTypeLimits(ctx context.Context) ([]QuotaGetShareTypeLimitsRow, error) {
-	rows, err := q.db.QueryContext(ctx, QuotaGetShareTypeLimits)
+// Upstream quota_get_all_by_project_and_share_type for every project and type.
+// share_type_name is NULL when the share type is deleted or missing; the
+// override row is still returned.
+func (q *Queries) QuotaGetAllByProjectAndShareType(ctx context.Context) ([]QuotaGetAllByProjectAndShareTypeRow, error) {
+	rows, err := q.db.QueryContext(ctx, QuotaGetAllByProjectAndShareType)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []QuotaGetShareTypeLimitsRow
+	var items []QuotaGetAllByProjectAndShareTypeRow
 	for rows.Next() {
-		var i QuotaGetShareTypeLimitsRow
+		var i QuotaGetAllByProjectAndShareTypeRow
 		if err := rows.Scan(
 			&i.ProjectID,
 			&i.ShareTypeID,
@@ -131,29 +134,31 @@ func (q *Queries) QuotaGetShareTypeLimits(ctx context.Context) ([]QuotaGetShareT
 	return items, nil
 }
 
-const QuotaGetUserLimits = `-- name: QuotaGetUserLimits :many
+const QuotaGetAllByProjectAndUser = `-- name: QuotaGetAllByProjectAndUser :many
 SELECT project_id, user_id, resource, hard_limit
 FROM project_user_quotas
 WHERE deleted = 0 AND project_id <> ''
+ORDER BY project_id, user_id, resource, id
 `
 
-type QuotaGetUserLimitsRow struct {
+type QuotaGetAllByProjectAndUserRow struct {
 	ProjectID string
 	UserID    string
 	Resource  string
 	HardLimit sql.NullInt32
 }
 
+// Upstream quota_get_all_by_project_and_user for every project and user.
 // User overrides are independent of project and share-type overrides.
-func (q *Queries) QuotaGetUserLimits(ctx context.Context) ([]QuotaGetUserLimitsRow, error) {
-	rows, err := q.db.QueryContext(ctx, QuotaGetUserLimits)
+func (q *Queries) QuotaGetAllByProjectAndUser(ctx context.Context) ([]QuotaGetAllByProjectAndUserRow, error) {
+	rows, err := q.db.QueryContext(ctx, QuotaGetAllByProjectAndUser)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []QuotaGetUserLimitsRow
+	var items []QuotaGetAllByProjectAndUserRow
 	for rows.Next() {
-		var i QuotaGetUserLimitsRow
+		var i QuotaGetAllByProjectAndUserRow
 		if err := rows.Scan(
 			&i.ProjectID,
 			&i.UserID,
@@ -173,37 +178,38 @@ func (q *Queries) QuotaGetUserLimits(ctx context.Context) ([]QuotaGetUserLimitsR
 	return items, nil
 }
 
-const QuotaUsageGetAll = `-- name: QuotaUsageGetAll :many
-SELECT
-    project_id,
-    resource,
-    in_use,
-    reserved
-FROM
-    quota_usages
-WHERE
-    deleted = 0 AND project_id <> ''
+const QuotaUsageGetAllByProject = `-- name: QuotaUsageGetAllByProject :many
+SELECT project_id, user_id, resource, in_use, reserved
+FROM quota_usages
+WHERE deleted = 0 AND project_id <> '' AND share_type_id IS NULL
+ORDER BY project_id, resource, user_id, id
 `
 
-type QuotaUsageGetAllRow struct {
+type QuotaUsageGetAllByProjectRow struct {
 	ProjectID sql.NullString
+	UserID    sql.NullString
 	Resource  sql.NullString
 	InUse     sql.NullInt32
 	Reserved  sql.NullInt32
 }
 
-// Raw accounting rows across users and share types; do not aggregate.
-func (q *Queries) QuotaUsageGetAll(ctx context.Context) ([]QuotaUsageGetAllRow, error) {
-	rows, err := q.db.QueryContext(ctx, QuotaUsageGetAll)
+// Upstream quota_usage_get_all_by_project for every project: raw per-user rows
+// with share_type_id IS NULL. Share-type accounting describes the same
+// allocations and is excluded; it is read by QuotaUsageGetAllByProjectAndShareType.
+// A NULL user_id is a legacy project-level row. in_use and reserved are
+// returned as stored, including NULL.
+func (q *Queries) QuotaUsageGetAllByProject(ctx context.Context) ([]QuotaUsageGetAllByProjectRow, error) {
+	rows, err := q.db.QueryContext(ctx, QuotaUsageGetAllByProject)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []QuotaUsageGetAllRow
+	var items []QuotaUsageGetAllByProjectRow
 	for rows.Next() {
-		var i QuotaUsageGetAllRow
+		var i QuotaUsageGetAllByProjectRow
 		if err := rows.Scan(
 			&i.ProjectID,
+			&i.UserID,
 			&i.Resource,
 			&i.InUse,
 			&i.Reserved,
@@ -221,87 +227,42 @@ func (q *Queries) QuotaUsageGetAll(ctx context.Context) ([]QuotaUsageGetAllRow, 
 	return items, nil
 }
 
-const QuotaUsageGetProjectTotals = `-- name: QuotaUsageGetProjectTotals :many
-SELECT project_id, resource,
-       CAST(SUM(COALESCE(in_use, 0)) AS SIGNED) AS in_use,
-       CAST(SUM(COALESCE(reserved, 0)) AS SIGNED) AS reserved
-FROM quota_usages
-WHERE deleted = 0 AND project_id <> '' AND share_type_id IS NULL
-GROUP BY project_id, resource
-`
-
-type QuotaUsageGetProjectTotalsRow struct {
-	ProjectID sql.NullString
-	Resource  sql.NullString
-	InUse     int64
-	Reserved  int64
-}
-
-// Manila _quota_usage_get_all(project): sum users only where share_type_id
-// IS NULL. Share-type accounting duplicates the same allocations and must
-// never be added to project totals. A NULL user is a legacy/project row.
-func (q *Queries) QuotaUsageGetProjectTotals(ctx context.Context) ([]QuotaUsageGetProjectTotalsRow, error) {
-	rows, err := q.db.QueryContext(ctx, QuotaUsageGetProjectTotals)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []QuotaUsageGetProjectTotalsRow
-	for rows.Next() {
-		var i QuotaUsageGetProjectTotalsRow
-		if err := rows.Scan(
-			&i.ProjectID,
-			&i.Resource,
-			&i.InUse,
-			&i.Reserved,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const QuotaUsageGetShareTypeTotals = `-- name: QuotaUsageGetShareTypeTotals :many
-SELECT u.project_id, u.share_type_id, COALESCE(st.name, '') AS share_type_name,
-       u.resource,
-       CAST(SUM(COALESCE(u.in_use, 0)) AS SIGNED) AS in_use,
-       CAST(SUM(COALESCE(u.reserved, 0)) AS SIGNED) AS reserved
+const QuotaUsageGetAllByProjectAndShareType = `-- name: QuotaUsageGetAllByProjectAndShareType :many
+SELECT u.project_id, u.share_type_id, st.name AS share_type_name, u.user_id,
+       u.resource, u.in_use, u.reserved
 FROM quota_usages u
-JOIN share_types st ON st.id = u.share_type_id AND st.deleted = 'False'
-WHERE u.deleted = 0 AND u.project_id <> ''
-GROUP BY u.project_id, u.share_type_id, st.name, u.resource
+LEFT JOIN share_types st ON st.id = u.share_type_id AND st.deleted = 'False'
+WHERE u.deleted = 0 AND u.project_id <> '' AND u.share_type_id IS NOT NULL
+ORDER BY u.project_id, u.share_type_id, u.resource, u.user_id, u.id
 `
 
-type QuotaUsageGetShareTypeTotalsRow struct {
+type QuotaUsageGetAllByProjectAndShareTypeRow struct {
 	ProjectID     sql.NullString
 	ShareTypeID   sql.NullString
-	ShareTypeName string
+	ShareTypeName sql.NullString
+	UserID        sql.NullString
 	Resource      sql.NullString
-	InUse         int64
-	Reserved      int64
+	InUse         sql.NullInt32
+	Reserved      sql.NullInt32
 }
 
-// Keep share-type usage separate from the per-user project accounting.
-func (q *Queries) QuotaUsageGetShareTypeTotals(ctx context.Context) ([]QuotaUsageGetShareTypeTotalsRow, error) {
-	rows, err := q.db.QueryContext(ctx, QuotaUsageGetShareTypeTotals)
+// Upstream quota_usage_get_all_by_project_and_share_type for every project and
+// type: raw rows with a share_type_id. share_type_name is NULL when the share
+// type is deleted or missing; the accounting row is still returned.
+func (q *Queries) QuotaUsageGetAllByProjectAndShareType(ctx context.Context) ([]QuotaUsageGetAllByProjectAndShareTypeRow, error) {
+	rows, err := q.db.QueryContext(ctx, QuotaUsageGetAllByProjectAndShareType)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []QuotaUsageGetShareTypeTotalsRow
+	var items []QuotaUsageGetAllByProjectAndShareTypeRow
 	for rows.Next() {
-		var i QuotaUsageGetShareTypeTotalsRow
+		var i QuotaUsageGetAllByProjectAndShareTypeRow
 		if err := rows.Scan(
 			&i.ProjectID,
 			&i.ShareTypeID,
 			&i.ShareTypeName,
+			&i.UserID,
 			&i.Resource,
 			&i.InUse,
 			&i.Reserved,
@@ -397,48 +358,61 @@ SELECT
     COALESCE(st.name, '') as share_type_name,
     COALESCE(az.name, '') as availability_zone
 FROM shares s
-LEFT JOIN share_instances si ON si.id = (
-    SELECT candidate.id
-    FROM share_instances candidate
-    WHERE candidate.share_id = s.id AND candidate.deleted = 'False'
-    ORDER BY
-        CASE
-            WHEN EXISTS (
-                SELECT 1 FROM share_instances reverting
-                WHERE reverting.share_id = candidate.share_id
-                  AND reverting.deleted = 'False' AND reverting.status = 'reverting'
-            ) OR NOT EXISTS (
-                SELECT 1 FROM share_instances promoting
-                WHERE promoting.share_id = candidate.share_id
-                  AND promoting.deleted = 'False' AND promoting.status = 'replication_change'
-            ) THEN CASE WHEN candidate.replica_state = 'active' THEN 0 ELSE 1 END
-            ELSE 0
-        END,
-        CASE candidate.status
-            WHEN 'reverting' THEN 0
-            WHEN 'replication_change' THEN 1
-            WHEN 'migrating' THEN 2
-            WHEN 'server_migrating' THEN 3
-            WHEN 'available' THEN 4
-            WHEN 'error' THEN 5
-            -- Unlisted, nontransitional statuses precede transitional statuses.
-            WHEN 'creating' THEN 7
-            WHEN 'deleting' THEN 8
-            WHEN 'manage_starting' THEN 9
-            WHEN 'unmanage_starting' THEN 10
-            WHEN 'extending' THEN 11
-            WHEN 'shrinking' THEN 12
-            WHEN 'migrating_to' THEN 14
-            WHEN 'restoring' THEN 15
-            WHEN 'server_migrating_to' THEN 18
-            WHEN 'backup_restoring' THEN 19
-            WHEN 'backup_creating' THEN 20
-            WHEN 'ensuring' THEN 21
-            ELSE 6
-        END,
-        candidate.id
-    LIMIT 1
-)
+LEFT JOIN (
+    SELECT
+        flagged.share_id,
+        flagged.status,
+        flagged.share_type_id,
+        flagged.availability_zone_id,
+        ROW_NUMBER() OVER (
+            PARTITION BY flagged.share_id
+            ORDER BY
+                CASE
+                    WHEN flagged.has_reverting = 1 OR flagged.has_replication_change = 0
+                    THEN CASE WHEN flagged.replica_state = 'active' THEN 0 ELSE 1 END
+                    ELSE 0
+                END,
+                CASE flagged.status
+                    WHEN 'reverting' THEN 0
+                    WHEN 'replication_change' THEN 1
+                    WHEN 'migrating' THEN 2
+                    WHEN 'server_migrating' THEN 3
+                    WHEN 'available' THEN 4
+                    WHEN 'error' THEN 5
+                    -- Unlisted, nontransitional statuses (6) precede transitional ones.
+                    WHEN 'creating' THEN 7
+                    WHEN 'deleting' THEN 8
+                    WHEN 'manage_starting' THEN 9
+                    WHEN 'unmanage_starting' THEN 10
+                    WHEN 'extending' THEN 11
+                    WHEN 'shrinking' THEN 12
+                    WHEN 'migrating_to' THEN 14
+                    WHEN 'restoring' THEN 15
+                    WHEN 'server_migrating_to' THEN 18
+                    WHEN 'backup_restoring' THEN 19
+                    WHEN 'backup_creating' THEN 20
+                    WHEN 'ensuring' THEN 21
+                    WHEN 'reverting_to_snapshot' THEN 22
+                    ELSE 6
+                END,
+                flagged.id
+        ) AS preference
+    FROM (
+        SELECT
+            candidate.id,
+            candidate.share_id,
+            candidate.status,
+            candidate.replica_state,
+            candidate.share_type_id,
+            candidate.availability_zone_id,
+            MAX(CASE WHEN candidate.status = 'reverting' THEN 1 ELSE 0 END)
+                OVER (PARTITION BY candidate.share_id) AS has_reverting,
+            MAX(CASE WHEN candidate.status = 'replication_change' THEN 1 ELSE 0 END)
+                OVER (PARTITION BY candidate.share_id) AS has_replication_change
+        FROM share_instances candidate
+        WHERE candidate.deleted = 'False'
+    ) flagged
+) si ON si.share_id = s.id AND si.preference = 1
 LEFT JOIN share_types st ON si.share_type_id = st.id AND st.deleted = 'False'
 LEFT JOIN availability_zones az ON si.availability_zone_id = az.id AND az.deleted = 'False'
 WHERE s.deleted = 'False'
@@ -458,11 +432,16 @@ type ShareGetInventoryRow struct {
 }
 
 // One row per nondeleted logical share, including shares with no instances.
-// Manila 2025.2 Share.instance sorts by status, then prefers active replicas
-// unless the first sorted status is replication_change. Reverting precedes
-// replication_change, so its presence restores active-replica preference.
-// Upstream leaves equal/unknown-status ties to relationship order; use instance
-// ID for a stable tie break. All instance metadata comes from the same winner.
+// Mirrors Manila Share.instance (manila/db/sqlalchemy/models.py): sort by
+// status, then prefer active replicas unless the first sorted status is
+// replication_change. Reverting sorts before replication_change, so its
+// presence restores active-replica preference. Upstream leaves equal or
+// unknown-status ties to relationship order; instance ID is the stable tie
+// break. All instance metadata comes from the same winner.
+// The transitional ranks copy constants.TRANSITIONAL_STATUSES in order
+// (manila/common/constants.py, checked against master 2026-11-18). Re-check both
+// files when moving to a new Manila release: a missing transitional status
+// falls into the unlisted bucket and would be preferred over transitional ones.
 // Retain the existing inventory deletion scope, including retained shares with
 // is_soft_deleted set; that flag is distinct from the row's deleted marker.
 func (q *Queries) ShareGetInventory(ctx context.Context) ([]ShareGetInventoryRow, error) {

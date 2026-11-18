@@ -20,7 +20,7 @@ repository objects. Placement queries live under `placement/objects`.
 | `heat/db` | `StackGetAll` |
 | `ironic/db` | `GetNodeList` |
 | `magnum/db` | `GetClusterList` |
-| `manila/db` | `ShareGetAllWithInstances`, `ShareGetInventory`, `QuotaRepository` |
+| `manila/db` | `ShareGetAllWithInstances`, `ShareGetInventory`, `QuotaGetAllByProject`, `QuotaUsageGetAllByProject` |
 | `neutron/db` | `GetAgents`, `GetHARouterAgentPortBindingsWithAgents`, `GetRouters` |
 | `octavia/db/repositories` | `PoolRepository`, `LoadBalancerRepository`, `AmphoraRepository` |
 | `placement/objects` | Resource provider inventory and allocation projections |
@@ -118,13 +118,18 @@ Cinder `VolumeGetAllWithAttachments` can return multiple rows per volume;
 `VolumeGetAll` and `VolumeGetAllByFilters` return one row per volume. Manila's
 `ShareGetAllWithInstances` and Octavia's `GetAllWithVIP` similarly describe joins.
 `ShareGetInventory` returns exactly one row per nondeleted logical share,
-including shares without instances. It follows Manila 2025.2 `Share.instance`:
+including shares without instances. It follows Manila's `Share.instance`:
 status precedence, active-replica preference, and the replication-change
 exception. Instance ID resolves otherwise unspecified ties (including writable
 replication with multiple active replicas). Status, AZ and type all come from
-the same representative instance. Retained `is_soft_deleted` shares remain in
-inventory, preserving the existing deletion scope; row-soft-deleted shares and
-instances are excluded. This is inventory, not quota accounting.
+the same representative instance, chosen in one pass with window functions.
+The status ranking copies Manila's `constants.TRANSITIONAL_STATUSES`; re-check
+it against `manila/common/constants.py` and `Share.instance` in
+`manila/db/sqlalchemy/models.py` when moving to a new Manila release, because a
+missing transitional status would be preferred over the listed ones. Retained
+`is_soft_deleted` shares remain in inventory, preserving the existing deletion
+scope; row-soft-deleted shares and instances are excluded. This is inventory,
+not quota accounting.
 
 No resource mutation, schema migration, or OpenStack request-context behavior is
 implemented. Query compatibility depends on the deployed service schema.
@@ -152,65 +157,60 @@ repository. This module owns connection, predicate, and database query tests.
 
 ## Manila quota accounting
 
-`manila/db.QuotaRepository` exposes project limits, user limits, the persisted
-`default` quota class, project usage totals, and share-type limits and usage.
-The existing `ShareGetAllWithInstances` API remains available.
-`QuotaGetProjectLimits` and `QuotaUsageGetAll` exclude NULL and empty project
-IDs. `QuotaUsageGetAll` preserves separate per-user and per-share-type rows;
-its projection omits user and share-type identifiers. Do not sum these raw
-rows: use the scoped total queries when aggregation is needed.
+The Manila quota queries are named after Manila's DB API functions. Each one
+reads every project at once rather than one project, and returns raw rows
+rather than a per-project dictionary:
+
+| Go method | Manila function | Table |
+| --- | --- | --- |
+| `QuotaGetAllByProject` | `quota_get_all_by_project` | `quotas` |
+| `QuotaGetAllByProjectAndUser` | `quota_get_all_by_project_and_user` | `project_user_quotas` |
+| `QuotaGetAllByProjectAndShareType` | `quota_get_all_by_project_and_share_type` | `project_share_type_quotas` |
+| `QuotaClassGetDefault` | `quota_class_get_default` | `quota_classes` |
+| `QuotaUsageGetAllByProject` | `quota_usage_get_all_by_project` | `quota_usages`, `share_type_id IS NULL` |
+| `QuotaUsageGetAllByProjectAndShareType` | `quota_usage_get_all_by_project_and_share_type` | `quota_usages`, `share_type_id IS NOT NULL` |
+
+Rows with a NULL or empty project ID are excluded. Results are ordered by their
+identifying columns and row ID, so callers that collapse duplicates get a
+stable result.
+
+Usage rows are not aggregated. `in_use` and `reserved` are returned as stored,
+including NULL, so callers can tell malformed rows from zero usage. To get
+Manila's project totals, sum `QuotaUsageGetAllByProject` rows by project and
+resource; this matches `_quota_usage_get_all`, which sums users (including
+legacy NULL-user rows) and excludes share-type rows. Share-type accounting
+describes the same allocations: read it with
+`QuotaUsageGetAllByProjectAndShareType` and never add it to project totals.
+`reserved` already counts open reservations; do not add `reservations` again.
+
+The share-type queries left-join `share_types`. When a share type is deleted or
+missing, its limits and usage are still returned with a NULL `ShareTypeName`, so
+per-type totals reconcile with project totals.
 
 The generated quota models use `sql.NullInt32` for integer `Deleted` fields:
 active rows have `0`, and soft-deleted rows store their row ID. The fixture has
 no database default for these columns; Manila supplies `0` through SQLAlchemy.
 Share and instance deletion markers retain their existing string representation.
 
-`GetProjectUsage` / `QuotaUsageGetProjectTotals` follows Manila 2025.2
-`_quota_usage_get_all`: only active rows with `share_type_id IS NULL` are summed
-across users, including legacy NULL-user rows. Share-type accounting describes
-the same allocations and is excluded from these totals. `GetShareTypeUsage` /
-`QuotaUsageGetShareTypeTotals` groups active rows by project, share type and
-resource. These totals use signed 64-bit values and include `reserved` from
-`quota_usages`; do not add `reservations` again. Missing usage rows are absent
-from query results. Query, scan, iteration and context errors are returned.
-
-`GetShareTypeLimits` and `GetShareTypeUsage` join active share types to return
-both UUID and name; deleted types and deleted accounting rows are excluded.
 User overrides live in `project_user_quotas`, separately from project overrides
 in `quotas` and type overrides in `project_share_type_quotas`. Never sum limits
 or substitute user limits for project limits. A NULL hard limit is preserved
-so callers can detect invalid/legacy data; Manila 2025.2 enforces numeric
-limits, using `-1` for unlimited. Its older model comment about NULL being
-unlimited is inconsistent with that numeric enforcement path.
-The caller supplies service configuration defaults and resolves missing limits:
-share-type override → project override → persisted `default` class → service
-configuration. Non-default classes need request-context information that these
-database tables do not provide.
+so callers can detect invalid or legacy data; Manila enforces numeric limits,
+using `-1` for unlimited. The caller supplies service configuration defaults
+and resolves missing limits: share-type override → project override →
+persisted `default` class → service configuration. Non-default classes need
+request-context information that these database tables do not provide.
 
 These queries read Manila's quota accounting, not rebuilt object counts or
 physical storage use. Stale accounting, including usage left after object
 removal, remains visible until Manila reconciles it. No writes or reconciliation
 are performed. The schema files are test fixtures, not production migrations.
-Run portable SQL semantics tests with:
 
 ```sh
-python3 -m unittest discover -s tests -p manila_quota_sql_test.py -v
 go test -race ./manila/db
 # Requires Docker and a disposable MariaDB container:
 go test -race -tags integration ./manila/db
 ```
-
-### Manila logical-share inventory validation
-
-```sh
-python3 -m unittest discover -s tests -p manila_inventory_sql_test.py -v
-go test -race -tags integration ./manila/db -run TestShareInventoryMariaDB -v
-```
-
-The portable test checks real generated SQL, insertion-order independence and
-upstream status/replica selection. The native test requires Docker and checks
-the same fixture through the generated Go query and MariaDB. Selection follows
-[Manila 2025.2 Share.instance](https://github.com/openstack/manila/blob/929cc9442e8fb1a15ec9ae7edb7b1bf0cf1aa3c2/manila/db/sqlalchemy/models.py#L267).
 
 ## License
 

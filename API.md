@@ -34,6 +34,7 @@ with identical semantics upstream.
 | `keystone/db` | `GetGroupMetrics` | `ListGroups` |
 | `magnum/db` | `GetClusterMetrics` | `GetClusterList` |
 | `manila/db` | `GetShareMetrics` | `ShareGetAllWithInstances` |
+| `manila/db` | — | `ShareGetInventory` |
 | `neutron/db` | `GetAgents` | `GetAgents` |
 | `neutron/db` | `GetHARouterAgentPortBindingsWithAgents` | `GetHARouterAgentPortBindingsWithAgents` |
 | `neutron/db` | `GetRouters` | `GetRouters` |
@@ -88,6 +89,9 @@ with identical semantics upstream.
 | `InstanceTypeGetAll` | [Historical Nova `instance_type_get_all`](https://github.com/openstack/nova/blob/2012.1/nova/db/sqlalchemy/api.py) | Legacy type identity projection, `Inactive`, explicit `Archived` extension. |
 | `VolumeTypeGetAll` | Cinder `volume_type_get_all(inactive=...)` | Optional `Inactive` includes deleted types; returns identity rows rather than a keyed Python dictionary. |
 | `GetProject` | [Keystone resource backend `get_project`](https://github.com/openstack/keystone/blob/master/keystone/resource/backends/sql.py) | ID/name/enabled/domain projection; does not implement request authorization or hidden-reference policy. |
+| `ShareGetInventory` | [Manila `Share.instance`](https://github.com/openstack/manila/blob/master/manila/db/sqlalchemy/models.py) | One row per logical share with its representative instance. Status ranking copies `constants.TRANSITIONAL_STATUSES` and must be re-checked on Manila upgrades. |
+| `QuotaGetAllByProject`, `QuotaGetAllByProjectAndUser`, `QuotaGetAllByProjectAndShareType`, `QuotaClassGetDefault` | [Manila DB API](https://github.com/openstack/manila/blob/master/manila/db/sqlalchemy/api.py) functions of the same names | Every project at once; raw rows instead of per-project dictionaries; share-type rows keep deleted types with a NULL name. |
+| `QuotaUsageGetAllByProject`, `QuotaUsageGetAllByProjectAndShareType` | Manila `quota_usage_get_all_by_project`, `quota_usage_get_all_by_project_and_share_type` | Every project at once; raw per-row `in_use`/`reserved` (nullable) instead of summed totals. See README.md for how to reproduce Manila's totals. |
 
 Instance and image filtered/single-resource APIs return richer record types with
 lifecycle metadata. Their fixed current-resource queries remain unchanged for

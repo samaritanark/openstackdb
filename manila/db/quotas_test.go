@@ -12,18 +12,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestQuotaRepository(t *testing.T) {
+func TestQuotaQueriesPropagateErrors(t *testing.T) {
 	for _, tc := range []struct {
 		name, query string
 		columns     []string
-		read        func(context.Context, *QuotaRepository) (any, error)
+		read        func(context.Context, *Queries) (any, error)
 	}{
-		{"defaults", QuotaGetDefaultLimits, []string{"resource", "hard_limit"}, func(ctx context.Context, r *QuotaRepository) (any, error) { return r.GetDefaultLimits(ctx) }},
-		{"projects", QuotaGetProjectLimits, []string{"project_id", "resource", "hard_limit"}, func(ctx context.Context, r *QuotaRepository) (any, error) { return r.GetProjectLimits(ctx) }},
-		{"users", QuotaGetUserLimits, []string{"project_id", "user_id", "resource", "hard_limit"}, func(ctx context.Context, r *QuotaRepository) (any, error) { return r.GetUserLimits(ctx) }},
-		{"share types", QuotaGetShareTypeLimits, []string{"project_id", "share_type_id", "share_type_name", "resource", "hard_limit"}, func(ctx context.Context, r *QuotaRepository) (any, error) { return r.GetShareTypeLimits(ctx) }},
-		{"project usage", QuotaUsageGetProjectTotals, []string{"project_id", "resource", "in_use", "reserved"}, func(ctx context.Context, r *QuotaRepository) (any, error) { return r.GetProjectUsage(ctx) }},
-		{"share type usage", QuotaUsageGetShareTypeTotals, []string{"project_id", "share_type_id", "share_type_name", "resource", "in_use", "reserved"}, func(ctx context.Context, r *QuotaRepository) (any, error) { return r.GetShareTypeUsage(ctx) }},
+		{"defaults", QuotaClassGetDefault, []string{"resource", "hard_limit"}, func(ctx context.Context, q *Queries) (any, error) { return q.QuotaClassGetDefault(ctx) }},
+		{"projects", QuotaGetAllByProject, []string{"project_id", "resource", "hard_limit"}, func(ctx context.Context, q *Queries) (any, error) { return q.QuotaGetAllByProject(ctx) }},
+		{"users", QuotaGetAllByProjectAndUser, []string{"project_id", "user_id", "resource", "hard_limit"}, func(ctx context.Context, q *Queries) (any, error) { return q.QuotaGetAllByProjectAndUser(ctx) }},
+		{"share types", QuotaGetAllByProjectAndShareType, []string{"project_id", "share_type_id", "share_type_name", "resource", "hard_limit"}, func(ctx context.Context, q *Queries) (any, error) { return q.QuotaGetAllByProjectAndShareType(ctx) }},
+		{"project usage", QuotaUsageGetAllByProject, []string{"project_id", "user_id", "resource", "in_use", "reserved"}, func(ctx context.Context, q *Queries) (any, error) { return q.QuotaUsageGetAllByProject(ctx) }},
+		{"share type usage", QuotaUsageGetAllByProjectAndShareType, []string{"project_id", "share_type_id", "share_type_name", "user_id", "resource", "in_use", "reserved"}, func(ctx context.Context, q *Queries) (any, error) {
+			return q.QuotaUsageGetAllByProjectAndShareType(ctx)
+		}},
 	} {
 		for _, scenario := range []string{"empty", "query error", "scan error", "iteration error", "canceled"} {
 			t.Run(tc.name+"/"+scenario, func(t *testing.T) {
@@ -45,29 +47,25 @@ func TestQuotaRepository(t *testing.T) {
 						for i := range values {
 							values[i] = "invalid integer"
 						}
-						rows.AddRow(values...)
-						query.WillReturnRows(rows).RowsWillBeClosed()
+						query.WillReturnRows(rows.AddRow(values...)).RowsWillBeClosed()
 					case "iteration error":
 						// Fail before scanning; the generated query must return rows.Err.
-						switch len(tc.columns) {
-						case 2:
-							rows.AddRow("shares", 1)
-						case 3:
-							rows.AddRow("p", "shares", 1)
-						case 4:
-							rows.AddRow("p", "u", "shares", 1)
-						case 5:
-							rows.AddRow("p", "t", "gold", "shares", 1)
-						case 6:
-							rows.AddRow("p", "t", "gold", "shares", 1, 2)
+						values := make([]driver.Value, len(tc.columns))
+						for i, column := range tc.columns {
+							switch column {
+							case "hard_limit", "in_use", "reserved":
+								values[i] = 1
+							default:
+								values[i] = "x"
+							}
 						}
-						rows.RowError(0, errors.New("iteration failed"))
+						rows.AddRow(values...).RowError(0, errors.New("iteration failed"))
 						query.WillReturnRows(rows).RowsWillBeClosed()
 					default:
 						query.WillReturnRows(rows).RowsWillBeClosed()
 					}
 				}
-				got, err := tc.read(ctx, NewQuotaRepository(db))
+				got, err := tc.read(ctx, New(db))
 				if scenario == "empty" {
 					require.NoError(t, err)
 					require.Empty(t, got)
@@ -80,23 +78,43 @@ func TestQuotaRepository(t *testing.T) {
 	}
 }
 
-func TestQuotaRepositoryScansValues(t *testing.T) {
+// Usage rows are returned raw: NULL amounts stay NULL rather than becoming zero,
+// and a deleted share type surfaces as a NULL name instead of a dropped row.
+func TestQuotaUsageScansRawValues(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
-	r := NewQuotaRepository(db)
+	q := New(db)
 	ctx := context.Background()
-	mock.ExpectQuery(regexp.QuoteMeta(QuotaGetDefaultLimits)).WillReturnRows(sqlmock.NewRows([]string{"resource", "hard_limit"}).AddRow("shares", nil))
-	defaults, err := r.GetDefaultLimits(ctx)
+	str := func(s string) sql.NullString { return sql.NullString{String: s, Valid: true} }
+	num := func(n int32) sql.NullInt32 { return sql.NullInt32{Int32: n, Valid: true} }
+
+	mock.ExpectQuery(regexp.QuoteMeta(QuotaUsageGetAllByProject)).WillReturnRows(
+		sqlmock.NewRows([]string{"project_id", "user_id", "resource", "in_use", "reserved"}).
+			AddRow("p", "u", "shares", 3, 1).
+			AddRow("p", nil, "shares", nil, nil))
+	usage, err := q.QuotaUsageGetAllByProject(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []QuotaGetDefaultLimitsRow{{Resource: sql.NullString{String: "shares", Valid: true}}}, defaults)
-	mock.ExpectQuery(regexp.QuoteMeta(QuotaUsageGetProjectTotals)).WillReturnRows(sqlmock.NewRows([]string{"project_id", "resource", "in_use", "reserved"}).AddRow("p", "gigabytes", int64(4000000000), 3))
-	usage, err := r.GetProjectUsage(ctx)
+	require.Equal(t, []QuotaUsageGetAllByProjectRow{
+		{ProjectID: str("p"), UserID: str("u"), Resource: str("shares"), InUse: num(3), Reserved: num(1)},
+		{ProjectID: str("p"), Resource: str("shares")},
+	}, usage)
+
+	mock.ExpectQuery(regexp.QuoteMeta(QuotaUsageGetAllByProjectAndShareType)).WillReturnRows(
+		sqlmock.NewRows([]string{"project_id", "share_type_id", "share_type_name", "user_id", "resource", "in_use", "reserved"}).
+			AddRow("p", "t", "gold", nil, "shares", 8, 2).
+			AddRow("p", "t-deleted", nil, nil, "shares", 5, 0))
+	typed, err := q.QuotaUsageGetAllByProjectAndShareType(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []QuotaUsageGetProjectTotalsRow{{ProjectID: sql.NullString{String: "p", Valid: true}, Resource: sql.NullString{String: "gigabytes", Valid: true}, InUse: 4000000000, Reserved: 3}}, usage)
-	mock.ExpectQuery(regexp.QuoteMeta(QuotaUsageGetShareTypeTotals)).WillReturnRows(sqlmock.NewRows([]string{"project_id", "share_type_id", "share_type_name", "resource", "in_use", "reserved"}).AddRow("p", "t", "gold", "shares", 8, 2))
-	types, err := r.GetShareTypeUsage(ctx)
+	require.Equal(t, []QuotaUsageGetAllByProjectAndShareTypeRow{
+		{ProjectID: str("p"), ShareTypeID: str("t"), ShareTypeName: str("gold"), Resource: str("shares"), InUse: num(8), Reserved: num(2)},
+		{ProjectID: str("p"), ShareTypeID: str("t-deleted"), Resource: str("shares"), InUse: num(5), Reserved: num(0)},
+	}, typed)
+
+	mock.ExpectQuery(regexp.QuoteMeta(QuotaClassGetDefault)).WillReturnRows(
+		sqlmock.NewRows([]string{"resource", "hard_limit"}).AddRow("shares", nil))
+	defaults, err := q.QuotaClassGetDefault(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []QuotaUsageGetShareTypeTotalsRow{{ProjectID: sql.NullString{String: "p", Valid: true}, ShareTypeID: sql.NullString{String: "t", Valid: true}, ShareTypeName: "gold", Resource: sql.NullString{String: "shares", Valid: true}, InUse: 8, Reserved: 2}}, types)
+	require.Equal(t, []QuotaClassGetDefaultRow{{Resource: str("shares")}}, defaults)
 	require.NoError(t, mock.ExpectationsWereMet())
 }

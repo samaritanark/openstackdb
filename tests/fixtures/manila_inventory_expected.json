@@ -13,6 +13,7 @@
   "fallback": ["fallback", "fallback", "project-2", 10, "NFS", "creating", "type-1", "gold", "zone-1"],
   "unknown": ["unknown", "unknown", "project-1", 10, "NFS", "inactive", "type-1", "gold", "zone-1"],
   "unknown-tie": ["unknown-tie", "unknown-tie", "project-2", 10, "NFS", "unknown_z", "type-1", "gold", "zone-1"],
+  "snapshot-revert": ["snapshot-revert", "snapshot-revert", "project-2", 10, "NFS", "creating", "type-2", "silver", "zone-2"],
   "deleted-instance": ["deleted-instance", "deleted-instance", "project-1", 10, "NFS", "available", "type-1", "gold", "zone-1"],
   "deleted-only": ["deleted-only", "deleted-only", "project-2", 10, "NFS", null, "", "", ""],
   "deleted-metadata": ["deleted-metadata", "deleted-metadata", "project-1", 10, "NFS", "available", "type-deleted", "", ""],

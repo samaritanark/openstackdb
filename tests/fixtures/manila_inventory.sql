@@ -41,6 +41,10 @@ INSERT INTO share_instances(id,share_id,status,replica_state,share_type_id,avail
 INSERT INTO shares(id,display_name,project_id,size,share_proto,deleted,is_soft_deleted,replication_type,task_state) VALUES('unknown-tie','unknown-tie','project-2','10','NFS','False','0',NULL,NULL);
 INSERT INTO share_instances(id,share_id,status,replica_state,share_type_id,availability_zone_id,deleted,cast_rules_to_readonly) VALUES('unknown-tie-0','unknown-tie','unknown_z',NULL,'type-1','az-1','False','0');
 INSERT INTO share_instances(id,share_id,status,replica_state,share_type_id,availability_zone_id,deleted,cast_rules_to_readonly) VALUES('unknown-tie-1','unknown-tie','unknown_a',NULL,'type-2','az-2','False','0');
+-- reverting_to_snapshot is transitional and ranks after creating.
+INSERT INTO shares(id,display_name,project_id,size,share_proto,deleted,is_soft_deleted,replication_type,task_state) VALUES('snapshot-revert','snapshot-revert','project-2','10','NFS','False','0',NULL,NULL);
+INSERT INTO share_instances(id,share_id,status,replica_state,share_type_id,availability_zone_id,deleted,cast_rules_to_readonly) VALUES('snapshot-revert-0','snapshot-revert','reverting_to_snapshot',NULL,'type-1','az-1','False','0');
+INSERT INTO share_instances(id,share_id,status,replica_state,share_type_id,availability_zone_id,deleted,cast_rules_to_readonly) VALUES('snapshot-revert-1','snapshot-revert','creating',NULL,'type-2','az-2','False','0');
 INSERT INTO shares(id,display_name,project_id,size,share_proto,deleted,is_soft_deleted,replication_type,task_state) VALUES('deleted-instance','deleted-instance','project-1','10','NFS','False','0',NULL,NULL);
 INSERT INTO share_instances(id,share_id,status,replica_state,share_type_id,availability_zone_id,deleted,cast_rules_to_readonly) VALUES('deleted-instance-0','deleted-instance','available',NULL,'type-1','az-1','False','0');
 INSERT INTO share_instances(id,share_id,status,replica_state,share_type_id,availability_zone_id,deleted,cast_rules_to_readonly) VALUES('deleted-instance-1','deleted-instance','reverting',NULL,'type-2','az-2','removed','0');

@@ -13,7 +13,7 @@ import (
 	"github.com/vexxhost/openstackdb/internal/testutil"
 )
 
-func TestQuotaRepositoryMariaDB(t *testing.T) {
+func TestQuotaQueriesMariaDB(t *testing.T) {
 	db := testutil.NewMySQLContainer(t, "manila", "../../sql/manila/prereqs.sql", "../../sql/manila/schema.sql")
 	fixture, err := os.ReadFile("../../tests/fixtures/manila_quotas.sql")
 	require.NoError(t, err)
@@ -33,34 +33,29 @@ func TestQuotaRepositoryMariaDB(t *testing.T) {
 		require.NoError(t, err)
 		require.Positive(t, deleted, table)
 	}
-	r := NewQuotaRepository(db)
+	q := New(db)
 	ctx := context.Background()
-	raw, err := New(db).QuotaUsageGetAll(ctx)
+
+	// Usage rows come back raw. Summing them the way a caller would must
+	// reproduce Manila's _quota_usage_get_all totals for project accounting.
+	usage, err := q.QuotaUsageGetAllByProject(ctx)
 	require.NoError(t, err)
-	require.Len(t, raw, 38)
-	duplicates := 0
-	for _, row := range raw {
+	got := map[string][2]int64{}
+	nullUsage := 0
+	for _, row := range usage {
 		require.True(t, row.ProjectID.Valid)
 		require.NotEmpty(t, row.ProjectID.String)
 		require.NotEqual(t, "deleted-only", row.ProjectID.String)
-		if row.ProjectID.String == "usage-only" && row.Resource.String == "gigabytes" {
-			require.Equal(t, sql.NullInt32{Int32: 2000000000, Valid: true}, row.InUse)
-			duplicates++
+		if !row.InUse.Valid || !row.Reserved.Valid {
+			require.Equal(t, "null-usage", row.ProjectID.String)
+			nullUsage++
+			continue
 		}
-		if row.ProjectID.String == "null-usage" {
-			require.False(t, row.InUse.Valid)
-			require.False(t, row.Reserved.Valid)
-		}
-	}
-	require.Equal(t, 2, duplicates)
-	usage, err := r.GetProjectUsage(ctx)
-	require.NoError(t, err)
-	got := map[string][2]int64{}
-	for _, row := range usage {
 		key := row.ProjectID.String + "/" + row.Resource.String
-		require.NotContains(t, got, key)
-		got[key] = [2]int64{row.InUse, row.Reserved}
+		total := got[key]
+		got[key] = [2]int64{total[0] + int64(row.InUse.Int32), total[1] + int64(row.Reserved.Int32)}
 	}
+	require.Equal(t, 1, nullUsage, "NULL usage must stay NULL, not become zero")
 	expected := map[string][2]int64{}
 	for i, resource := range strings.Fields("shares gigabytes snapshots snapshot_gigabytes share_networks share_replicas replica_gigabytes share_groups share_group_snapshots backups backup_gigabytes") {
 		expected["project-a/"+resource] = [2]int64{int64(i + 11), 3}
@@ -68,15 +63,25 @@ func TestQuotaRepositoryMariaDB(t *testing.T) {
 	expected["project-a/shares"] = [2]int64{13, 7}
 	expected["usage-only/shares"] = [2]int64{5, 2}
 	expected["usage-only/gigabytes"] = [2]int64{4000000000, 0}
-	expected["null-usage/shares"] = [2]int64{0, 0}
 	require.Equal(t, expected, got)
-	types, err := r.GetShareTypeUsage(ctx)
+
+	// Share-type accounting is separate, and rows for deleted or missing
+	// share types stay visible with a NULL name.
+	types, err := q.QuotaUsageGetAllByProjectAndShareType(ctx)
 	require.NoError(t, err)
 	typed := map[string][2]int64{}
 	for _, row := range types {
-		require.NotContains(t, typed, row.ProjectID.String+"/"+row.ShareTypeID.String+"/"+row.Resource.String)
-		typed[row.ProjectID.String+"/"+row.ShareTypeID.String+"/"+row.Resource.String] = [2]int64{row.InUse, row.Reserved}
-		require.Contains(t, []string{"gold", "silver"}, row.ShareTypeName)
+		key := row.ProjectID.String + "/" + row.ShareTypeID.String + "/" + row.Resource.String
+		switch row.ShareTypeID.String {
+		case "type-a":
+			require.Equal(t, sql.NullString{String: "gold", Valid: true}, row.ShareTypeName)
+		case "type-b":
+			require.Equal(t, sql.NullString{String: "silver", Valid: true}, row.ShareTypeName)
+		default:
+			require.False(t, row.ShareTypeName.Valid, key)
+		}
+		total := typed[key]
+		typed[key] = [2]int64{total[0] + int64(row.InUse.Int32), total[1] + int64(row.Reserved.Int32)}
 	}
 	expectedTypes := map[string][2]int64{}
 	for i, resource := range strings.Fields("shares gigabytes snapshots snapshot_gigabytes share_replicas replica_gigabytes") {
@@ -84,17 +89,23 @@ func TestQuotaRepositoryMariaDB(t *testing.T) {
 	}
 	expectedTypes["project-a/type-b/shares"] = [2]int64{8, 3}
 	expectedTypes["type-usage-only/type-a/snapshots"] = [2]int64{1, 2}
+	expectedTypes["project-a/type-deleted/shares"] = [2]int64{9999, 9999}
+	expectedTypes["project-a//shares"] = [2]int64{10000, 1000}
 	require.Equal(t, expectedTypes, typed)
-	limits, err := r.GetShareTypeLimits(ctx)
+
+	limits, err := q.QuotaGetAllByProjectAndShareType(ctx)
 	require.NoError(t, err)
-	require.Len(t, limits, 4)
-	users, err := r.GetUserLimits(ctx)
+	require.Len(t, limits, 5)
+	for _, row := range limits {
+		require.Equal(t, row.ShareTypeID != "type-deleted", row.ShareTypeName.Valid, row.ShareTypeID)
+	}
+	users, err := q.QuotaGetAllByProjectAndUser(ctx)
 	require.NoError(t, err)
 	require.Len(t, users, 3)
-	defaults, err := r.GetDefaultLimits(ctx)
+	defaults, err := q.QuotaClassGetDefault(ctx)
 	require.NoError(t, err)
 	require.Len(t, defaults, 3)
-	projectLimits, err := r.GetProjectLimits(ctx)
+	projectLimits, err := q.QuotaGetAllByProject(ctx)
 	require.NoError(t, err)
 	require.Len(t, projectLimits, 12)
 	for _, row := range projectLimits {
@@ -111,8 +122,8 @@ func TestQuotaRepositoryMariaDB(t *testing.T) {
 	}
 	_, err = db.ExecContext(ctx, "DROP TABLE quota_usages")
 	require.NoError(t, err)
-	_, err = r.GetProjectUsage(ctx)
+	_, err = q.QuotaUsageGetAllByProject(ctx)
 	require.Error(t, err)
-	_, err = r.GetShareTypeUsage(ctx)
+	_, err = q.QuotaUsageGetAllByProjectAndShareType(ctx)
 	require.Error(t, err)
 }

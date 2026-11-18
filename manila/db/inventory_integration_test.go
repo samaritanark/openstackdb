@@ -51,7 +51,7 @@ func TestShareInventoryMariaDB(t *testing.T) {
 	require.True(t, sort.StringsAreSorted(ids))
 	legacy, err := q.ShareGetAllWithInstances(context.Background())
 	require.NoError(t, err)
-	require.Len(t, legacy, 32)
+	require.Len(t, legacy, 34)
 	counts := map[string]int{}
 	for _, row := range legacy {
 		counts[row.ID]++
@@ -62,6 +62,7 @@ func TestShareInventoryMariaDB(t *testing.T) {
 	}
 	require.Equal(t, 2, counts["identical"])
 	require.Equal(t, 3, counts["reverting-promotion"])
+	require.Equal(t, 2, counts["snapshot-revert"])
 	require.Equal(t, 1, counts["zero"])
 	require.Equal(t, 1, counts["deleted-only"])
 	require.Equal(t, 1, counts["soft-retained"])
