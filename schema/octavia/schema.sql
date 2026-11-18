@@ -77,8 +77,8 @@ CREATE TABLE
 
 -- Octavia quotas: one row per project (octavia/db/models.py Quotas).
 -- Integer columns are limits; NULL means the deployment default applies.
--- in_use_* columns exist upstream but the API exporter counts in_use from
--- object listings, so those columns are fixture-only here.
+-- in_use_* are Octavia's cached usage counters, which check_quota_met and
+-- decrement_quota maintain and enforce against.
 CREATE TABLE
     `quotas` (
         `project_id` varchar(36) NOT NULL PRIMARY KEY,
@@ -98,8 +98,8 @@ CREATE TABLE
         `in_use_l7rule` int DEFAULT NULL
     );
 
--- Minimal listener rows so per-project listener counts match the API exporter
--- (in_use counted from listings, not quotas.in_use_listener).
+-- Minimal listener rows for QuotaUsageGetAll's recount, which follows
+-- check_quota_met's project_id and provisioning_status predicate.
 CREATE TABLE
     `listener` (
         `id` varchar(36) NOT NULL PRIMARY KEY,

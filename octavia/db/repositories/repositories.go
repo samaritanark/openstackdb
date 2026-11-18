@@ -32,21 +32,16 @@ func (r *AmphoraRepository) GetAll(ctx context.Context) ([]AmphoraGetAllRow, err
 type QuotaRepository struct{ queries *Queries }
 
 func NewQuotaRepository(db DBTX) *QuotaRepository { return &QuotaRepository{queries: New(db)} }
-func (r *QuotaRepository) GetAll(ctx context.Context) ([]QuotaGetAllRow, error) {
+
+// GetAll returns per-project limits and Octavia's cached in_use_* counters,
+// which are what Octavia enforces quota against.
+func (r *QuotaRepository) GetAll(ctx context.Context) ([]Quota, error) {
 	return r.queries.QuotaGetAll(ctx)
-}
-func (r *QuotaRepository) LoadBalancerCountByProject(ctx context.Context) ([]LoadBalancerCountByProjectRow, error) {
-	return r.queries.LoadBalancerCountByProject(ctx)
-}
-func (r *QuotaRepository) PoolCountByProject(ctx context.Context) ([]PoolCountByProjectRow, error) {
-	return r.queries.PoolCountByProject(ctx)
-}
-func (r *QuotaRepository) ListenerCountByProject(ctx context.Context) ([]ListenerCountByProjectRow, error) {
-	return r.queries.ListenerCountByProject(ctx)
 }
 
 // GetUsage rebuilds project counts from non-DELETED objects, independently
-// of the cached in_use_* quota columns. It includes usage-only projects.
+// of the cached in_use_* counters. It includes usage-only projects. It scans
+// every quota resource table; compare it with GetAll to detect counter drift.
 func (r *QuotaRepository) GetUsage(ctx context.Context) ([]QuotaUsageGetAllRow, error) {
 	return r.queries.QuotaUsageGetAll(ctx)
 }

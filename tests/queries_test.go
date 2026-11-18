@@ -192,12 +192,6 @@ func TestOctaviaQueries(t *testing.T) {
 	require.NoError(t, err, "AmphoraGetAll")
 	_, err = q.QuotaGetAll(ctx)
 	require.NoError(t, err, "QuotaGetAll")
-	_, err = q.LoadBalancerCountByProject(ctx)
-	require.NoError(t, err, "LoadBalancerCountByProject")
-	_, err = q.PoolCountByProject(ctx)
-	require.NoError(t, err, "PoolCountByProject")
-	_, err = q.ListenerCountByProject(ctx)
-	require.NoError(t, err, "ListenerCountByProject")
 	_, err = q.QuotaUsageGetAll(ctx)
 	require.NoError(t, err, "QuotaUsageGetAll")
 }

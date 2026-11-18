@@ -69,90 +69,6 @@ func (q *Queries) AmphoraGetAll(ctx context.Context) ([]AmphoraGetAllRow, error)
 	return items, nil
 }
 
-const ListenerCountByProject = `-- name: ListenerCountByProject :many
-SELECT
-    project_id,
-    COUNT(*) as count
-FROM
-    listener
-WHERE
-    provisioning_status != 'DELETED'
-    AND project_id IS NOT NULL
-    AND project_id != ''
-GROUP BY
-    project_id
-`
-
-type ListenerCountByProjectRow struct {
-	ProjectID sql.NullString
-	Count     int64
-}
-
-func (q *Queries) ListenerCountByProject(ctx context.Context) ([]ListenerCountByProjectRow, error) {
-	rows, err := q.db.QueryContext(ctx, ListenerCountByProject)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListenerCountByProjectRow
-	for rows.Next() {
-		var i ListenerCountByProjectRow
-		if err := rows.Scan(&i.ProjectID, &i.Count); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const LoadBalancerCountByProject = `-- name: LoadBalancerCountByProject :many
-SELECT
-    project_id,
-    COUNT(*) as count
-FROM
-    load_balancer
-WHERE
-    provisioning_status != 'DELETED'
-    AND project_id IS NOT NULL
-    AND project_id != ''
-GROUP BY
-    project_id
-`
-
-type LoadBalancerCountByProjectRow struct {
-	ProjectID sql.NullString
-	Count     int64
-}
-
-func (q *Queries) LoadBalancerCountByProject(ctx context.Context) ([]LoadBalancerCountByProjectRow, error) {
-	rows, err := q.db.QueryContext(ctx, LoadBalancerCountByProject)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []LoadBalancerCountByProjectRow
-	for rows.Next() {
-		var i LoadBalancerCountByProjectRow
-		if err := rows.Scan(&i.ProjectID, &i.Count); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const LoadBalancerGetAllWithVIP = `-- name: LoadBalancerGetAllWithVIP :many
 SELECT
     lb.id,
@@ -197,48 +113,6 @@ func (q *Queries) LoadBalancerGetAllWithVIP(ctx context.Context) ([]LoadBalancer
 			&i.Provider,
 			&i.VipAddress,
 		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const PoolCountByProject = `-- name: PoolCountByProject :many
-SELECT
-    project_id,
-    COUNT(*) as count
-FROM
-    pool
-WHERE
-    provisioning_status != 'DELETED'
-    AND project_id IS NOT NULL
-    AND project_id != ''
-GROUP BY
-    project_id
-`
-
-type PoolCountByProjectRow struct {
-	ProjectID sql.NullString
-	Count     int64
-}
-
-func (q *Queries) PoolCountByProject(ctx context.Context) ([]PoolCountByProjectRow, error) {
-	rows, err := q.db.QueryContext(ctx, PoolCountByProject)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []PoolCountByProjectRow
-	for rows.Next() {
-		var i PoolCountByProjectRow
-		if err := rows.Scan(&i.ProjectID, &i.Count); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -320,32 +194,36 @@ SELECT
     member,
     pool,
     l7policy,
-    l7rule
+    l7rule,
+    in_use_health_monitor,
+    in_use_listener,
+    in_use_load_balancer,
+    in_use_member,
+    in_use_pool,
+    in_use_l7policy,
+    in_use_l7rule
 FROM
     quotas
+WHERE
+    project_id != ''
+ORDER BY
+    project_id
 `
 
-type QuotaGetAllRow struct {
-	ProjectID     string
-	HealthMonitor sql.NullInt32
-	Listener      sql.NullInt32
-	LoadBalancer  sql.NullInt32
-	Member        sql.NullInt32
-	Pool          sql.NullInt32
-	L7policy      sql.NullInt32
-	L7rule        sql.NullInt32
-}
-
-// Per-project Octavia quota limits. NULL column means no explicit override.
-func (q *Queries) QuotaGetAll(ctx context.Context) ([]QuotaGetAllRow, error) {
+// Per-project Octavia quota limits and the cached in_use_* counters that
+// Octavia's check_quota_met and decrement_quota enforce against. NULL limit
+// means no explicit override; a NULL or 0 counter is recounted by Octavia on
+// the next quota check. Octavia rejects empty project IDs (MissingProjectID),
+// so empty-string rows are excluded, matching QuotaUsageGetAll.
+func (q *Queries) QuotaGetAll(ctx context.Context) ([]Quota, error) {
 	rows, err := q.db.QueryContext(ctx, QuotaGetAll)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []QuotaGetAllRow
+	var items []Quota
 	for rows.Next() {
-		var i QuotaGetAllRow
+		var i Quota
 		if err := rows.Scan(
 			&i.ProjectID,
 			&i.HealthMonitor,
@@ -355,6 +233,13 @@ func (q *Queries) QuotaGetAll(ctx context.Context) ([]QuotaGetAllRow, error) {
 			&i.Pool,
 			&i.L7policy,
 			&i.L7rule,
+			&i.InUseHealthMonitor,
+			&i.InUseListener,
+			&i.InUseLoadBalancer,
+			&i.InUseMember,
+			&i.InUsePool,
+			&i.InUseL7policy,
+			&i.InUseL7rule,
 		); err != nil {
 			return nil, err
 		}
@@ -414,6 +299,9 @@ type QuotaUsageGetAllRow struct {
 
 // Rebuild counts using Octavia check_quota_met's project/status predicate.
 // Each table is counted independently: no parent join can multiply rows.
+// Upstream defines no index on project_id or provisioning_status, so this
+// scans all seven tables; compare against QuotaGetAll's in_use_* counters to
+// detect drift rather than calling it on every scrape.
 func (q *Queries) QuotaUsageGetAll(ctx context.Context) ([]QuotaUsageGetAllRow, error) {
 	rows, err := q.db.QueryContext(ctx, QuotaUsageGetAll)
 	if err != nil {

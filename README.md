@@ -22,7 +22,7 @@ repository objects. Placement queries live under `placement/objects`.
 | `magnum/db` | `GetClusterList` |
 | `manila/db` | `ShareGetAllWithInstances` |
 | `neutron/db` | `GetAgents`, `GetHARouterAgentPortBindingsWithAgents`, `GetRouters` |
-| `octavia/db/repositories` | `PoolRepository`, `LoadBalancerRepository`, `AmphoraRepository` |
+| `octavia/db/repositories` | `PoolRepository`, `LoadBalancerRepository`, `AmphoraRepository`, `QuotaRepository` |
 | `placement/objects` | Resource provider inventory and allocation projections |
 
 ## Example
@@ -141,50 +141,36 @@ go test -race -tags integration -timeout 15m ./...
 Exporter collector tests continue to verify metric output in the exporter
 repository. This module owns connection, predicate, and database query tests.
 
-### Octavia quota usage validation
+### Octavia quotas
 
-`NewQuotaRepository(db).GetAll(ctx)` / `QuotaGetAll` returns stored project quota
-limits for load balancers, listeners, pools, health monitors, members, L7 policies
-and L7 rules. Each limit is a `sql.NullInt32`: NULL means no explicit override,
-and zero and -1 remain distinct values. The caller resolves configured defaults.
-This read preserves quota-table project keys, including empty strings.
+`NewQuotaRepository(db).GetAll(ctx)` / `QuotaGetAll` returns one `Quota` row per
+project with the stored limits for load balancers, listeners, pools, health
+monitors, members, L7 policies and L7 rules, plus Octavia's cached `in_use_*`
+counters. Each value is a `sql.NullInt32`. A NULL limit means no explicit
+override, and zero and -1 remain distinct values; the caller resolves configured
+defaults. The `in_use_*` counters are what Octavia's `check_quota_met` and
+`decrement_quota` enforce against. A NULL or zero counter means Octavia will
+recount on its next quota check for that project.
 
 `QuotaRepository.GetUsage` / `QuotaUsageGetAll` rebuilds project counts for all
-seven quota resources independently, using `provisioning_status != 'DELETED'`.
-It follows the count-rebuild predicate in
-[Octavia 2025.2 `check_quota_met`](https://opendev.org/openstack/octavia/src/branch/stable/2025.2/octavia/db/repositories.py), not
-its cached `in_use_*` columns. Differences from the enforcement counters can
-persist until reconciled.
+seven quota resources independently, using the same predicate Octavia uses when
+it recounts: the object's own `project_id` and `provisioning_status != 'DELETED'`.
 Counts include ERROR and pending statuses. Each object uses its own project and
-status, including children of deleted parents or parents owned by another project.
-There are no parent joins to multiply counts. Results contain only nonzero
+status, including children of deleted parents or parents owned by another project,
+and there are no parent joins to multiply counts. Results contain only nonzero
 project/resource groups, including projects without quota rows, with int64 usage.
-NULL and empty project IDs are excluded by `QuotaUsageGetAll` and the
-`LoadBalancerCountByProject`, `ListenerCountByProject`, and `PoolCountByProject`
-queries. Valid-project counts use the same deleted-resource predicate in all
-four queries. The schema fixtures contain only fields needed for these tests,
-not a complete OpenStack migration or proposed production schema change.
 
-Portable SQL semantics tests (Python standard library, in-memory SQLite):
+The two reads answer different questions. `in_use_*` is what Octavia enforces
+today, and `GetUsage` is what those counters should be. Compare them to detect
+counter drift, which persists until Octavia reconciles it. Octavia defines no
+index on `project_id` or `provisioning_status`, so `GetUsage` scans all seven
+object tables. `GetAll` reads only the `quotas` table and is cheap enough for
+every scrape. Run `GetUsage` as a less frequent drift check on large deployments.
 
-```sh
-python3 -m unittest discover -s tests -p octavia_quota_sql_test.py -v
-```
-
-Run these tests explicitly when the CI workflow does not include Python SQL-test discovery.
-Project-a counts are distinct (4 through 10)
-for load balancers, listeners, pools, members, health monitors, L7 policies and
-L7 rules, respectively; both SQL test paths assert the exact project/resource map.
-These exercise the generated SQL and schema/seed fixtures without a database service,
-but do not establish MySQL/MariaDB dialect or deployment compatibility. Native
-query/scanning validation against the disposable MariaDB test container is:
-
-```sh
-go test -race -tags integration -timeout 15m ./octavia/db/repositories -run TestQuotaUsageMariaDB -count=1 -v
-```
-
-This integration test requires Docker and never reads production credentials.
-Regenerate query code with sqlc v1.30.0 (`sqlc generate`).
+Both reads exclude NULL and empty project IDs. Octavia rejects empty project IDs
+(`MissingProjectID`), so such rows can never hold quota. The schema fixtures
+contain only fields needed for these tests, not a complete OpenStack migration.
+The MariaDB integration test is `TestOctaviaQuotas` in `tests/` and requires Docker.
 
 ## License
 

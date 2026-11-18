@@ -56,7 +56,9 @@ INSERT INTO l7rule (id, project_id, provisioning_status, l7policy_id) VALUES ('l
 INSERT INTO l7rule (id, project_id, provisioning_status, l7policy_id) VALUES ('l7rule-b', 'project-b', 'ACTIVE', 'l7policy-a-0');
 INSERT INTO l7rule (id, project_id, provisioning_status, l7policy_id) VALUES ('l7rule-null', NULL, 'ACTIVE', 'l7policy-a-0');
 INSERT INTO l7rule (id, project_id, provisioning_status, l7policy_id) VALUES ('l7rule-empty', '', 'ACTIVE', 'l7policy-a-0');
-INSERT INTO quotas (project_id, health_monitor, listener, load_balancer, member, pool, l7policy, l7rule, in_use_member) VALUES ('project-a', NULL, -1, 0, 0, 17, NULL, 23, 999);
+-- Cached counters: in_use_load_balancer matches the recount (4), in_use_member
+-- has drifted (999 vs 7). The rest are NULL, as before Octavia's first quota check.
+INSERT INTO quotas (project_id, health_monitor, listener, load_balancer, member, pool, l7policy, l7rule, in_use_load_balancer, in_use_member) VALUES ('project-a', NULL, -1, 0, 0, 17, NULL, 23, 4, 999);
 INSERT INTO listener (id, project_id, provisioning_status, protocol, protocol_port, load_balancer_id) VALUES ('listener-extra-0', 'project-a', 'ACTIVE', 'HTTP', 80, 'load_balancer-a-0');
 INSERT INTO pool (id, project_id, provisioning_status, operating_status, enabled, protocol, lb_algorithm, load_balancer_id) VALUES ('pool-extra-0', 'project-a', 'ACTIVE', 'ONLINE', 1, 'HTTP', 'ROUND_ROBIN', 'load_balancer-a-0');
 INSERT INTO pool (id, project_id, provisioning_status, operating_status, enabled, protocol, lb_algorithm, load_balancer_id) VALUES ('pool-extra-1', 'project-a', 'ACTIVE', 'ONLINE', 1, 'HTTP', 'ROUND_ROBIN', 'load_balancer-a-0');

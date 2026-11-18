@@ -50,6 +50,8 @@ with identical semantics upstream.
 | `octavia/db/repositories` | `GetAllPools` | `PoolGetAll` |
 | `octavia/db/repositories` | `GetAllLoadBalancersWithVip` | `LoadBalancerGetAllWithVIP` |
 | `octavia/db/repositories` | `GetAllAmphora` | `AmphoraGetAll` |
+| `octavia/db/repositories` | — | `QuotaGetAll` (`QuotaRepository.GetAll`) |
+| `octavia/db/repositories` | — | `QuotaUsageGetAll` (`QuotaRepository.GetUsage`) |
 | `placement/objects` | `GetResourceMetrics` | `GetResourceProviderInventories` |
 | `placement/objects` | `GetAllocationsByProject` | `GetAllocationsByProject` |
 | `placement/objects` | `GetConsumerCountByProject` | `GetConsumerCountByProject` |
@@ -76,7 +78,8 @@ with identical semantics upstream.
 - The filtered APIs support exact membership and lifetime overlap, not every upstream regex, pagination, eager-loading, or authorization option.
 - Current exporter queries retain their existing deleted/hidden/status predicates; they are not full upstream administrative listings.
 - Errors are Go/database errors; absent single resources return `sql.ErrNoRows` rather than Python service-specific exceptions.
-- Aggregate queries such as `QuotaGetAllWithUsage`, `GetResourceProviderInventories`, and `GetResourceCountsByProject` are explicitly library extensions.
+- Aggregate queries such as `QuotaGetAllWithUsage`, `GetResourceProviderInventories`, `GetResourceCountsByProject`, and Octavia `QuotaUsageGetAll` are explicitly library extensions. Octavia `QuotaUsageGetAll` recounts objects with `check_quota_met`'s predicate; Octavia itself enforces against the cached `in_use_*` counters that `QuotaGetAll` returns.
+- Owner filtering follows each service: Neutron keeps empty-string project IDs because Neutron creates real objects with them (for example L3 HA networks and ports), while Octavia excludes them because it rejects empty project IDs.
 - No cross-cell routing or historic schema negotiation is performed. Nova archive access is explicitly selected with `InstanceFilters.Archive`.
 
 ## Resource lifecycle and metadata reads
