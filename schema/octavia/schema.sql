@@ -74,3 +74,71 @@ CREATE TABLE
         `octavia_owned` tinyint (1) DEFAULT NULL,
         `vnic_type` varchar(64) NOT NULL DEFAULT 'normal'
     );
+
+-- Octavia quotas: one row per project (octavia/db/models.py Quotas).
+-- Integer columns are limits; NULL means the deployment default applies.
+-- in_use_* are Octavia's cached usage counters, which check_quota_met and
+-- decrement_quota maintain and enforce against.
+CREATE TABLE
+    `quotas` (
+        `project_id` varchar(36) NOT NULL PRIMARY KEY,
+        `health_monitor` int DEFAULT NULL,
+        `listener` int DEFAULT NULL,
+        `load_balancer` int DEFAULT NULL,
+        `member` int DEFAULT NULL,
+        `pool` int DEFAULT NULL,
+        `l7policy` int DEFAULT NULL,
+        `l7rule` int DEFAULT NULL,
+        `in_use_health_monitor` int DEFAULT NULL,
+        `in_use_listener` int DEFAULT NULL,
+        `in_use_load_balancer` int DEFAULT NULL,
+        `in_use_member` int DEFAULT NULL,
+        `in_use_pool` int DEFAULT NULL,
+        `in_use_l7policy` int DEFAULT NULL,
+        `in_use_l7rule` int DEFAULT NULL
+    );
+
+-- Minimal listener rows for QuotaUsageGetAll's recount, which follows
+-- check_quota_met's project_id and provisioning_status predicate.
+CREATE TABLE
+    `listener` (
+        `id` varchar(36) NOT NULL PRIMARY KEY,
+        `project_id` varchar(36) DEFAULT NULL,
+        `name` varchar(255) DEFAULT NULL,
+        `protocol` varchar(16) NOT NULL,
+        `protocol_port` int NOT NULL,
+        `load_balancer_id` varchar(36) DEFAULT NULL,
+        `provisioning_status` varchar(16) NOT NULL
+    );
+
+-- Minimal quota-count fixture; fields follow Octavia 2025.2 db/models.py.
+CREATE TABLE `member` (
+    `id` varchar(36) NOT NULL PRIMARY KEY,
+    `project_id` varchar(36) DEFAULT NULL,
+    `pool_id` varchar(36) DEFAULT NULL,
+    `provisioning_status` varchar(16) NOT NULL
+);
+
+-- Minimal quota-count fixture; fields follow Octavia 2025.2 db/models.py.
+CREATE TABLE `health_monitor` (
+    `id` varchar(36) NOT NULL PRIMARY KEY,
+    `project_id` varchar(36) DEFAULT NULL,
+    `pool_id` varchar(36) DEFAULT NULL UNIQUE,
+    `provisioning_status` varchar(16) NOT NULL
+);
+
+-- Minimal quota-count fixture; fields follow Octavia 2025.2 db/models.py.
+CREATE TABLE `l7policy` (
+    `id` varchar(36) NOT NULL PRIMARY KEY,
+    `project_id` varchar(36) DEFAULT NULL,
+    `listener_id` varchar(36) DEFAULT NULL,
+    `provisioning_status` varchar(16) NOT NULL
+);
+
+-- Minimal quota-count fixture; fields follow Octavia 2025.2 db/models.py.
+CREATE TABLE `l7rule` (
+    `id` varchar(36) NOT NULL PRIMARY KEY,
+    `project_id` varchar(36) DEFAULT NULL,
+    `l7policy_id` varchar(36) DEFAULT NULL,
+    `provisioning_status` varchar(16) NOT NULL
+);

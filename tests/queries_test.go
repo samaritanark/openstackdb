@@ -190,6 +190,10 @@ func TestOctaviaQueries(t *testing.T) {
 	require.NoError(t, err, "LoadBalancerGetAllWithVIP")
 	_, err = q.AmphoraGetAll(ctx)
 	require.NoError(t, err, "AmphoraGetAll")
+	_, err = q.QuotaGetAll(ctx)
+	require.NoError(t, err, "QuotaGetAll")
+	_, err = q.QuotaUsageGetAll(ctx)
+	require.NoError(t, err, "QuotaUsageGetAll")
 }
 func TestPlacementQueries(t *testing.T) {
 	ctx := context.Background()

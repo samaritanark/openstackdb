@@ -22,7 +22,7 @@ repository objects. Placement queries live under `placement/objects`.
 | `magnum/db` | `GetClusterList` |
 | `manila/db` | `ShareGetAllWithInstances` |
 | `neutron/db` | `GetAgents`, `GetHARouterAgentPortBindingsWithAgents`, `GetRouters` |
-| `octavia/db/repositories` | `PoolRepository`, `LoadBalancerRepository`, `AmphoraRepository` |
+| `octavia/db/repositories` | `PoolRepository`, `LoadBalancerRepository`, `AmphoraRepository`, `QuotaRepository` |
 | `placement/objects` | Resource provider inventory and allocation projections |
 
 ## Example
@@ -140,6 +140,37 @@ go test -race -tags integration -timeout 15m ./...
 
 Exporter collector tests continue to verify metric output in the exporter
 repository. This module owns connection, predicate, and database query tests.
+
+### Octavia quotas
+
+`NewQuotaRepository(db).GetAll(ctx)` / `QuotaGetAll` returns one `Quota` row per
+project with the stored limits for load balancers, listeners, pools, health
+monitors, members, L7 policies and L7 rules, plus Octavia's cached `in_use_*`
+counters. Each value is a `sql.NullInt32`. A NULL limit means no explicit
+override, and zero and -1 remain distinct values; the caller resolves configured
+defaults. The `in_use_*` counters are what Octavia's `check_quota_met` and
+`decrement_quota` enforce against. A NULL or zero counter means Octavia will
+recount on its next quota check for that project.
+
+`QuotaRepository.GetUsage` / `QuotaUsageGetAll` rebuilds project counts for all
+seven quota resources independently, using the same predicate Octavia uses when
+it recounts: the object's own `project_id` and `provisioning_status != 'DELETED'`.
+Counts include ERROR and pending statuses. Each object uses its own project and
+status, including children of deleted parents or parents owned by another project,
+and there are no parent joins to multiply counts. Results contain only nonzero
+project/resource groups, including projects without quota rows, with int64 usage.
+
+The two reads answer different questions. `in_use_*` is what Octavia enforces
+today, and `GetUsage` is what those counters should be. Compare them to detect
+counter drift, which persists until Octavia reconciles it. Octavia defines no
+index on `project_id` or `provisioning_status`, so `GetUsage` scans all seven
+object tables. `GetAll` reads only the `quotas` table and is cheap enough for
+every scrape. Run `GetUsage` as a less frequent drift check on large deployments.
+
+Both reads exclude NULL and empty project IDs. Octavia rejects empty project IDs
+(`MissingProjectID`), so such rows can never hold quota. The schema fixtures
+contain only fields needed for these tests, not a complete OpenStack migration.
+The MariaDB integration test is `TestOctaviaQuotas` in `tests/` and requires Docker.
 
 ## License
 

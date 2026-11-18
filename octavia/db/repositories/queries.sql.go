@@ -184,3 +184,143 @@ func (q *Queries) PoolGetAll(ctx context.Context) ([]PoolGetAllRow, error) {
 	}
 	return items, nil
 }
+
+const QuotaGetAll = `-- name: QuotaGetAll :many
+SELECT
+    project_id,
+    health_monitor,
+    listener,
+    load_balancer,
+    member,
+    pool,
+    l7policy,
+    l7rule,
+    in_use_health_monitor,
+    in_use_listener,
+    in_use_load_balancer,
+    in_use_member,
+    in_use_pool,
+    in_use_l7policy,
+    in_use_l7rule
+FROM
+    quotas
+WHERE
+    project_id != ''
+ORDER BY
+    project_id
+`
+
+// Per-project Octavia quota limits and the cached in_use_* counters that
+// Octavia's check_quota_met and decrement_quota enforce against. NULL limit
+// means no explicit override; a NULL or 0 counter is recounted by Octavia on
+// the next quota check. Octavia rejects empty project IDs (MissingProjectID),
+// so empty-string rows are excluded, matching QuotaUsageGetAll.
+func (q *Queries) QuotaGetAll(ctx context.Context) ([]Quota, error) {
+	rows, err := q.db.QueryContext(ctx, QuotaGetAll)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Quota
+	for rows.Next() {
+		var i Quota
+		if err := rows.Scan(
+			&i.ProjectID,
+			&i.HealthMonitor,
+			&i.Listener,
+			&i.LoadBalancer,
+			&i.Member,
+			&i.Pool,
+			&i.L7policy,
+			&i.L7rule,
+			&i.InUseHealthMonitor,
+			&i.InUseListener,
+			&i.InUseLoadBalancer,
+			&i.InUseMember,
+			&i.InUsePool,
+			&i.InUseL7policy,
+			&i.InUseL7rule,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const QuotaUsageGetAll = `-- name: QuotaUsageGetAll :many
+SELECT project_id, 'load_balancer' AS resource, CAST(COUNT(*) AS SIGNED) AS in_use
+FROM load_balancer
+WHERE provisioning_status != 'DELETED' AND project_id IS NOT NULL AND project_id != ''
+GROUP BY project_id
+UNION ALL
+SELECT project_id, 'listener' AS resource, CAST(COUNT(*) AS SIGNED) AS in_use
+FROM listener
+WHERE provisioning_status != 'DELETED' AND project_id IS NOT NULL AND project_id != ''
+GROUP BY project_id
+UNION ALL
+SELECT project_id, 'pool' AS resource, CAST(COUNT(*) AS SIGNED) AS in_use
+FROM pool
+WHERE provisioning_status != 'DELETED' AND project_id IS NOT NULL AND project_id != ''
+GROUP BY project_id
+UNION ALL
+SELECT project_id, 'member' AS resource, CAST(COUNT(*) AS SIGNED) AS in_use
+FROM member
+WHERE provisioning_status != 'DELETED' AND project_id IS NOT NULL AND project_id != ''
+GROUP BY project_id
+UNION ALL
+SELECT project_id, 'health_monitor' AS resource, CAST(COUNT(*) AS SIGNED) AS in_use
+FROM health_monitor
+WHERE provisioning_status != 'DELETED' AND project_id IS NOT NULL AND project_id != ''
+GROUP BY project_id
+UNION ALL
+SELECT project_id, 'l7policy' AS resource, CAST(COUNT(*) AS SIGNED) AS in_use
+FROM l7policy
+WHERE provisioning_status != 'DELETED' AND project_id IS NOT NULL AND project_id != ''
+GROUP BY project_id
+UNION ALL
+SELECT project_id, 'l7rule' AS resource, CAST(COUNT(*) AS SIGNED) AS in_use
+FROM l7rule
+WHERE provisioning_status != 'DELETED' AND project_id IS NOT NULL AND project_id != ''
+GROUP BY project_id
+`
+
+type QuotaUsageGetAllRow struct {
+	ProjectID sql.NullString
+	Resource  string
+	InUse     int64
+}
+
+// Rebuild counts using Octavia check_quota_met's project/status predicate.
+// Each table is counted independently: no parent join can multiply rows.
+// Upstream defines no index on project_id or provisioning_status, so this
+// scans all seven tables; compare against QuotaGetAll's in_use_* counters to
+// detect drift rather than calling it on every scrape.
+func (q *Queries) QuotaUsageGetAll(ctx context.Context) ([]QuotaUsageGetAllRow, error) {
+	rows, err := q.db.QueryContext(ctx, QuotaUsageGetAll)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []QuotaUsageGetAllRow
+	for rows.Next() {
+		var i QuotaUsageGetAllRow
+		if err := rows.Scan(&i.ProjectID, &i.Resource, &i.InUse); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
