@@ -218,74 +218,81 @@ SELECT
 FROM
     quotas q
 WHERE
-    q.project_id IS NOT NULL;
+    q.project_id IS NOT NULL
+ORDER BY
+    q.project_id,
+    q.resource,
+    q.id;
 
 -- name: GetResourceCountsByProject :many
 SELECT
     project_id,
     'floatingip' as resource,
     CAST(COUNT(*) AS SIGNED) as cnt
-FROM floatingips WHERE project_id IS NOT NULL AND project_id <> '' GROUP BY project_id
+FROM floatingips WHERE project_id IS NOT NULL GROUP BY project_id
 UNION ALL
 SELECT
     project_id,
     'network' as resource,
     CAST(COUNT(*) AS SIGNED) as cnt
-FROM networks WHERE project_id IS NOT NULL AND project_id <> '' GROUP BY project_id
+FROM networks WHERE project_id IS NOT NULL GROUP BY project_id
 UNION ALL
 SELECT
     project_id,
     'port' as resource,
     CAST(COUNT(*) AS SIGNED) as cnt
-FROM ports WHERE project_id IS NOT NULL AND project_id <> '' GROUP BY project_id
+FROM ports WHERE project_id IS NOT NULL GROUP BY project_id
 UNION ALL
 SELECT
     project_id,
     'router' as resource,
     CAST(COUNT(*) AS SIGNED) as cnt
-FROM routers WHERE project_id IS NOT NULL AND project_id <> '' GROUP BY project_id
+FROM routers WHERE project_id IS NOT NULL GROUP BY project_id
 UNION ALL
 SELECT
     project_id,
     'security_group' as resource,
     CAST(COUNT(*) AS SIGNED) as cnt
-FROM securitygroups WHERE project_id IS NOT NULL AND project_id <> '' GROUP BY project_id
+FROM securitygroups WHERE project_id IS NOT NULL GROUP BY project_id
 UNION ALL
 SELECT
     project_id,
     'security_group_rule' as resource,
     CAST(COUNT(*) AS SIGNED) as cnt
-FROM securitygrouprules WHERE project_id IS NOT NULL AND project_id <> '' GROUP BY project_id
+FROM securitygrouprules WHERE project_id IS NOT NULL GROUP BY project_id
 UNION ALL
 SELECT
     project_id,
     'subnet' as resource,
     CAST(COUNT(*) AS SIGNED) as cnt
-FROM subnets WHERE project_id IS NOT NULL AND project_id <> '' GROUP BY project_id
+FROM subnets WHERE project_id IS NOT NULL GROUP BY project_id
 UNION ALL
 SELECT
     project_id,
     'rbac_policy' as resource,
     CAST(COUNT(*) AS SIGNED) as cnt
-FROM networkrbacs WHERE project_id IS NOT NULL AND project_id <> '' GROUP BY project_id
+FROM networkrbacs WHERE project_id IS NOT NULL GROUP BY project_id
 UNION ALL
 SELECT
     project_id,
     'subnetpool' as resource,
     CAST(COUNT(*) AS SIGNED) as cnt
-FROM subnetpools WHERE project_id IS NOT NULL AND project_id <> '' GROUP BY project_id;
+FROM subnetpools WHERE project_id IS NOT NULL GROUP BY project_id;
 
--- name: GetActiveReservationsByProject :many
--- A single caller-supplied UTC cutoff matches Neutron's inclusive active boundary.
--- Group only by owner/resource: expiration groups must all contribute (27.0.4).
+-- name: GetReservationsForResources :many
+-- Mirrors neutron.db.quota.api.get_reservations_for_resources(expired=False):
+-- active means expiration >= now, evaluated on the database clock in UTC
+-- because Neutron writes expirations with utcnow(). Rows are returned per
+-- reservation delta, unaggregated, for every project with a non-NULL owner.
 SELECT
+    r.id AS reservation_id,
     r.project_id,
+    r.expiration,
     d.resource,
-    CAST(COALESCE(SUM(d.amount), 0) AS SIGNED) AS reserved,
-    CAST(SUM(CASE WHEN d.amount IS NULL OR d.amount < 0 THEN 1 ELSE 0 END) AS SIGNED) AS invalid_amounts
+    d.amount
 FROM reservations r
 JOIN resourcedeltas d ON d.reservation_id = r.id
-WHERE r.expiration >= sqlc.arg(cutoff)
-  AND r.project_id <> ''
-  AND d.resource IN ('floatingip', 'router', 'network', 'port', 'security_group', 'security_group_rule', 'subnet', 'subnetpool', 'rbac_policy')
-GROUP BY r.project_id, d.resource;
+WHERE r.expiration >= UTC_TIMESTAMP()
+  AND r.project_id IS NOT NULL
+  AND d.resource IN (sqlc.slice('resources'))
+ORDER BY r.project_id, d.resource, r.id;

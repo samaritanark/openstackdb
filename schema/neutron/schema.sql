@@ -244,6 +244,8 @@ CREATE TABLE
     );
 
 -- Neutron quota reservation storage (local query fixture, not a migration).
+-- Mirrors upstream neutron/db/quota/models.py: no index on expiration or
+-- project_id (HasProjectNoIndex); InnoDB indexes reservation_id for the FK.
 CREATE TABLE `reservations` (
   `id` varchar(36) NOT NULL PRIMARY KEY,
   `project_id` varchar(255) DEFAULT NULL,
