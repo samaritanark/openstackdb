@@ -151,3 +151,15 @@ CREATE TABLE
         `is_public` tinyint (1) DEFAULT NULL,
         `description` varchar(255) DEFAULT NULL
     );
+
+-- Cinder 27.0.0 (2025.2) QuotaClass model; test/code-generation schema only.
+CREATE TABLE `quota_classes` (
+    `id` int NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `created_at` datetime DEFAULT NULL,
+    `updated_at` datetime DEFAULT NULL,
+    `deleted_at` datetime DEFAULT NULL,
+    `deleted` tinyint (1) DEFAULT NULL,
+    `class_name` varchar(255) DEFAULT NULL,
+    `resource` varchar(300) DEFAULT NULL,
+    `hard_limit` int DEFAULT NULL
+);

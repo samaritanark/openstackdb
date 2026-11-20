@@ -14,7 +14,7 @@ repository objects. Placement queries live under `placement/objects`.
 | --- | --- |
 | `nova/db/main` | `InstanceGetAllByFilters`, `InstanceGetByUUID`, `ServiceGetAll`, `ComputeNodeGetAll` |
 | `nova/db/api` | `FlavorGetAll`, `AggregateGetAll`, quota projections |
-| `cinder/db` | `ServiceGetAll`, `QuotaGetProjectLimits`, `QuotaUsageGetAll` |
+| `cinder/db` | `ServiceGetAll`, `QuotaGetAllByProject`, `QuotaUsageGetAllByProject`, `ParseQuotaResource` |
 | `glance/db` | `ImageGetAll` |
 | `keystone/db` | `ListProjects`, `ListDomains`, `ListUsers` |
 | `heat/db` | `StackGetAll` |
@@ -123,6 +123,44 @@ implemented. Query compatibility depends on the deployed service schema.
 `schema.Files` embeds the minimal schema/index fixtures used by integration tests.
 They are test inputs, not production migrations or a claim of support for every
 OpenStack release. Some inherited queries require indexes present in the fixtures.
+
+## Cinder quota accounting
+
+The Cinder quota queries are named after Cinder's DB API functions. Each one
+reads every project at once rather than one project, and returns raw rows
+rather than a per-project dictionary:
+
+| Go method | Cinder function | Table |
+| --- | --- | --- |
+| `QuotaGetAllByProject` | `quota_get_all_by_project` | `quotas` |
+| `QuotaUsageGetAllByProject` | `quota_usage_get_all_by_project` | `quota_usages` |
+| `QuotaClassGetDefaults` | `quota_class_get_defaults` | `quota_classes`, `default` class |
+
+Rows with a NULL or empty project ID are excluded: Cinder quota rows belong to
+Keystone projects. Results are ordered by project, resource and row ID, so
+callers that collapse duplicates get a stable result. Duplicate active rows,
+NULL limits, zero limits and `-1` (unlimited) are returned as stored. The
+existing exporter queries `QuotaGetProjectLimits`, `QuotaUsageGetAll` and
+`QuotaGetAllWithUsage` keep their behavior.
+
+Limits and usage are read separately, so usage also covers projects that have
+no limit overrides. Usage is Cinder's cached accounting, not a live count of
+volumes and snapshots. It can drift from the real resources until Cinder
+refreshes it. `reserved` already counts open reservations.
+
+Resource keys are either global (`volumes`, `gigabytes`, `snapshots`, `backups`,
+`backup_gigabytes`, `per_volume_gigabytes`, `groups`) or per volume type, built
+as `<part>_<volume type name>` where the part is `volumes`, `gigabytes` or
+`snapshots`. Per-type and global accounting describe the same allocations, so
+never add them together. Use `ParseQuotaResource` to split a key. Don't split
+on the first underscore: that misreads `backup_gigabytes` and type names that
+contain underscores. Keys hold the volume type's name, not its ID. Cinder
+rewrites them when a type is renamed, but keeps them after a type is deleted,
+so a parsed name may not match any type from `VolumeTypeGetAll`.
+
+Callers resolve effective limits: a project override, then the `default` class,
+then service configuration. The `quota_classes` schema is a test and
+code-generation fixture, not a production migration.
 
 ## Development
 

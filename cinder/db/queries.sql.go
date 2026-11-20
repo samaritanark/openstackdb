@@ -10,6 +10,83 @@ import (
 	"database/sql"
 )
 
+const QuotaClassGetDefaults = `-- name: QuotaClassGetDefaults :many
+SELECT resource, hard_limit
+FROM quota_classes
+WHERE deleted = 0 AND class_name = 'default'
+ORDER BY resource, id
+`
+
+type QuotaClassGetDefaultsRow struct {
+	Resource  sql.NullString
+	HardLimit sql.NullInt32
+}
+
+// Upstream quota_class_get_defaults. The persisted 'default' class overrides
+// service configuration defaults.
+func (q *Queries) QuotaClassGetDefaults(ctx context.Context) ([]QuotaClassGetDefaultsRow, error) {
+	rows, err := q.db.QueryContext(ctx, QuotaClassGetDefaults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []QuotaClassGetDefaultsRow
+	for rows.Next() {
+		var i QuotaClassGetDefaultsRow
+		if err := rows.Scan(&i.Resource, &i.HardLimit); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const QuotaGetAllByProject = `-- name: QuotaGetAllByProject :many
+SELECT project_id, resource, hard_limit
+FROM quotas
+WHERE deleted = 0 AND project_id <> ''
+ORDER BY project_id, resource, id
+`
+
+type QuotaGetAllByProjectRow struct {
+	ProjectID sql.NullString
+	Resource  string
+	HardLimit sql.NullInt32
+}
+
+// Upstream quota_get_all_by_project for every project. The table holds both
+// aggregate resources (volumes, gigabytes, ...) and per-volume-type resources
+// (volumes_<type name>, ...). See ParseQuotaResource. Rows with a NULL or empty
+// project ID are excluded.
+func (q *Queries) QuotaGetAllByProject(ctx context.Context) ([]QuotaGetAllByProjectRow, error) {
+	rows, err := q.db.QueryContext(ctx, QuotaGetAllByProject)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []QuotaGetAllByProjectRow
+	for rows.Next() {
+		var i QuotaGetAllByProjectRow
+		if err := rows.Scan(&i.ProjectID, &i.Resource, &i.HardLimit); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const QuotaGetAllWithUsage = `-- name: QuotaGetAllWithUsage :many
 SELECT
     q.project_id,
@@ -129,6 +206,53 @@ func (q *Queries) QuotaUsageGetAll(ctx context.Context) ([]QuotaUsageGetAllRow, 
 	for rows.Next() {
 		var i QuotaUsageGetAllRow
 		if err := rows.Scan(&i.ProjectID, &i.Resource, &i.InUse); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const QuotaUsageGetAllByProject = `-- name: QuotaUsageGetAllByProject :many
+SELECT project_id, resource, in_use, reserved
+FROM quota_usages
+WHERE deleted = 0 AND project_id <> ''
+ORDER BY project_id, resource, id
+`
+
+type QuotaUsageGetAllByProjectRow struct {
+	ProjectID sql.NullString
+	Resource  sql.NullString
+	InUse     int32
+	Reserved  int32
+}
+
+// Upstream quota_usage_get_all_by_project for every project. These are Cinder's
+// cached usage counters, not a live count of volumes and snapshots, and can
+// drift until Cinder refreshes them. reserved already counts open reservations.
+// Aggregate and per-volume-type resources describe the same allocations, so
+// never add them together.
+func (q *Queries) QuotaUsageGetAllByProject(ctx context.Context) ([]QuotaUsageGetAllByProjectRow, error) {
+	rows, err := q.db.QueryContext(ctx, QuotaUsageGetAllByProject)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []QuotaUsageGetAllByProjectRow
+	for rows.Next() {
+		var i QuotaUsageGetAllByProjectRow
+		if err := rows.Scan(
+			&i.ProjectID,
+			&i.Resource,
+			&i.InUse,
+			&i.Reserved,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
